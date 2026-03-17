@@ -8,9 +8,9 @@ will be implemented in a separate system file for clarity.
 class Drone:
 
     def __init__(self, battery=100, x=0, y=0, z=0):
-        self.id = id
+        self.id = uuid.uuid4()
         self.battery = battery
-        self.coordinates = (0, 0, 0)
+        self.coordinates = (x, y, z)
 
     def get_battery(self) -> float:
         return self.battery
@@ -27,21 +27,21 @@ class Drone:
         distance = math.sqrt((x - old_x)**2 + (y - old_y)**2 + (z - old_z)**2)
         self.coordinates = (x, y, z)
 
-    def thermal_scan():
-        """
-        Uses thermal imaging technology to detect heat presence, which in turns detect survivors
-        in this scenario. For realistic purposes, in future implementation, we will be using 
-        a custom built machine learning model to perform this task.
-        """
-        pass
+    # def thermal_scan():
+    #     """
+    #     Uses thermal imaging technology to detect heat presence, which in turns detect survivors
+    #     in this scenario. For realistic purposes, in future implementation, we will be using 
+    #     a custom built machine learning model to perform this task.
+    #     """
+    #     pass
 
-    def detect_surroundings(self):
-        """
-        Simulates vision of nearby surrounding to detect disaster signs (e.g. for wildfire, it would 
-        be fire and smokes..). For realistic purposes too, we will be using a machine learning model, tuned
-        for each possible natural disasters for fast and accurate detection.
-        """
-        pass
+    # def detect_surroundings(self):
+    #     """
+    #     Simulates vision of nearby surrounding to detect disaster signs (e.g. for wildfire, it would 
+    #     be fire and smokes..). For realistic purposes too, we will be using a machine learning model, tuned
+    #     for each possible natural disasters for fast and accurate detection.
+    #     """
+    #     pass
     
     
 
