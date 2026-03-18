@@ -1,50 +1,72 @@
 """
-Orchestrator / LLM agent class. Note that the biggest purpose of this class is not just a bare MCP tool,
-but a bridge between our simulation environment (regardless of 2D/3D) and our key decision makers - LLM itself.
-In other words, we should expose our simulation as controllable tools with maximum observability to ensure rescue
-and implementation efficiency.
+Orchestrator / LLM agent logic.
 
-3 Main Tasks here:
-1. Help LLMs to see the world/environment.
-2. Help LLMs to reason about the world. 
-3. Help LLMs to take actual actions.
-
-LLM -> ***MCP server (Tools)*** -> Simulation
+What should we achieve?
 """
 
-from mcp.server.fastmcp import FastMCP
-
-mcp = FastMCP("Rescue Drone Server")
-
-simulation_service = SimulationService();
-
-@mcp.tool()
-def get_all_drones():
+def get_world_state():
+    """
+    Here we need to maximize our observability of the complete environment, by utilising multiple
+    MCP tools to gather as much information as possible.
+    """
     pass
 
-@mcp.tool()
-def get_drone_status(id):
+def set_global_strategy():
+    """
+    Here we will set the highest level goal to be obeyed by the swarm intelligence systems. Note that here
+    we only make a single decision, which is to set the global strategy. The swarm intelligence systems
+    will be responsible for the execution of the global strategy.
+    """
     pass
 
-@mcp.tool()
-def move_drone_to(id, x, y, z):
-    pass
+def build_high_level_prompt():
+    """
+    Build the prompt for coordinating the LLM.
+    """
+    prompt = f"""You are an autonomous rescue swarm coordinator responsible for guiding a fleet of drones in a disaster environment.
 
-@mcp.tool()
-def discover_surroundings_of_drone(id):
-    pass
+    Your role is NOT to micromanage individual drone movements, but to define high-level strategy, priorities, and constraints that guide decentralized swarm behavior.
 
-@mcp.tool()
-def thermal_scan_of_drone(id):
-    pass
+    MISSION STATE (elapsed: {elapsed_seconds}s)
+    Coverage: {sectors.get('coverage_pct',0)}% | Survivors found: {sectors.get('found_survivors',0)}/{sectors.get('total_survivors',0)} | Wind: {sectors.get('wind','')}
+    Environment: discovered fire zones {len(env.get('discovered_fire_zones', []))}, smoke sectors {len(env.get('smoke_sectors', []))}, grid size {env.get('grid_size','?')}
 
-@mcp.tool()
-def get_known_hazard_coordinates():
-    pass
+    FLEET STATUS:
+    {os.linesep.join(fleet_lines)}
 
-@mcp.tool()
-def get_unknown_hazard_coordinates():
-    pass
+    AVAILABLE SECTOR OPTIONS (aggregated overview):
+    {os.linesep.join(rec_lines)}
 
+    OBJECTIVE:
+    Maximise survivor discovery while maintaining safe drone operation and efficient area coverage.
+
+    GUIDELINES:
+    1. Prioritise survivor detection over exploration when signals or hazards suggest human presence.
+    2. Ensure drones maintain safe battery levels and can return to base.
+    3. Avoid overcrowding drones in the same area unless necessary (e.g. high-risk zones).
+    4. Balance exploration (uncovered sectors) and exploitation (known hazards or survivor signals).
+    5. Consider environmental risks such as fire and smoke when assigning priorities.
+
+    OUTPUT FORMAT — respond with valid JSON only, no markdown, no extra text:
+    {{
+    "strategy": "High-level plan describing how the swarm should behave (e.g. exploration vs rescue focus, hazard avoidance, sector prioritisation).",
+    "priorities": [
+        "List 3–5 key priorities guiding drone behaviour (e.g. 'prioritise sectors near smoke signals', 'limit 2 drones per fire zone', 'recall drones below 25% battery')"
+    ],
+    "constraints": {{
+        "max_drones_per_sector": <number>,
+        "battery_recall_threshold": <percentage>,
+        "hazard_avoidance": "<low|medium|high>"
+    }}
+    }}
+    """
+
+def orchestrate():
+    """
+    Here we will orchestrate the entire simulation.
+    """
+    while True:
+        world_summary = get_world_state()
+    
 
 
