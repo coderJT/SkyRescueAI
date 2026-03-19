@@ -1,0 +1,9 @@
+{
+  "grid_size": 200,
+  "sector_rows": 10,
+  "sector_cols": 10,
+  "passive_survivor_radius": 18.0,
+  "smoke_multiplier": 1.4,
+  "base_x": 5,
+  "base_z": 5
+}

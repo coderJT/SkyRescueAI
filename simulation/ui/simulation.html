@@ -1,0 +1,1245 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forest Wildfire Rescue — 3D Simulation</title>
+    <style>
+        #settings-toggle {
+            position: absolute;
+            top: 57px;
+            /* Below top bar */
+            right: 12px;
+            z-index: 20;
+            pointer-events: auto;
+            background: rgba(15, 25, 45, 0.95);
+            color: #4a9eff;
+            border: 1px solid rgba(74, 158, 255, 0.4);
+            padding: 6px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+
+        #settings-panel {
+            position: absolute;
+            top: 89px;
+            /* Below settings button */
+            right: 12px;
+            width: 260px;
+            max-height: 70vh;
+            overflow-y: auto;
+            background: rgba(12, 20, 35, 0.95);
+            border: 1px solid rgba(74, 158, 255, 0.35);
+            border-radius: 8px;
+            padding: 10px;
+            color: #d9e1ee;
+            z-index: 20;
+            display: none;
+            pointer-events: auto;
+        }
+
+        #settings-panel.open {
+            display: block;
+        }
+
+        #settings-panel h3 {
+            margin-bottom: 8px;
+            color: #6bb6ff;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .settings-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 6px;
+        }
+
+        .settings-row label {
+            font-size: 11px;
+            flex: 1;
+            color: #9fb4d9;
+        }
+
+        .settings-row input {
+            width: 90px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(74, 158, 255, 0.25);
+            color: #d9e1ee;
+            padding: 4px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+
+        .settings-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        #settings-save {
+            background: #4a9eff;
+            border: none;
+            color: #0a1620;
+            padding: 6px 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 11px;
+        }
+
+        #settings-status {
+            font-size: 10px;
+            color: #9fb4d9;
+        }
+
+        .settings-note {
+            font-size: 10px;
+            color: #6f809c;
+            margin-top: 6px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            overflow: hidden;
+            background: #0d1520;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+
+        #hud {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        /* === TOP BAR === */
+        #top-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 45px;
+            background: linear-gradient(to bottom, rgba(10, 15, 25, 0.95), rgba(10, 15, 25, 0.85));
+            border-bottom: 1px solid rgba(74, 158, 255, 0.2);
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            z-index: 100;
+            pointer-events: auto;
+        }
+
+        #top-bar-left {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        #top-bar-center {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        #top-bar-right {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .top-bar-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            color: #8aaacc;
+        }
+
+        .top-bar-icon {
+            font-size: 14px;
+            color: #4a9eff;
+        }
+
+        .top-bar-label {
+            color: #6a8090;
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .top-bar-value {
+            color: #b0c0d0;
+            font-weight: 600;
+            font-size: 11px;
+        }
+
+        #title {
+            color: #4a9eff;
+            font-size: 14px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 2.5px;
+            text-shadow: 0 0 15px rgba(74, 158, 255, 0.4);
+        }
+
+        #cam-panel {
+            position: absolute;
+            top: 57px;
+            /* Below top bar */
+            left: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            pointer-events: auto;
+        }
+
+        .cam-btn {
+            background: rgba(15, 25, 45, 0.9);
+            border: 1px solid rgba(74, 158, 255, 0.3);
+            color: #8aaacc;
+            padding: 6px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 10px;
+            font-family: inherit;
+            transition: all 0.2s;
+            text-align: left;
+        }
+
+        .cam-btn:hover {
+            background: rgba(74, 158, 255, 0.15);
+            color: #4a9eff;
+            border-color: #4a9eff;
+        }
+
+        .cam-btn.active {
+            background: rgba(74, 158, 255, 0.2);
+            color: #4a9eff;
+            border-color: #4a9eff;
+            box-shadow: 0 0 10px rgba(74, 158, 255, 0.2);
+        }
+
+        #right-panel {
+            position: absolute;
+            top: 57px;
+            /* Below top bar */
+            right: 12px;
+            width: 380px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: auto;
+        }
+
+        #minimap-box {
+            background: rgba(15, 25, 45, 0.95);
+            border: 1px solid rgba(74, 158, 255, 0.25);
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        #minimap-box h4 {
+            color: #4a9eff;
+            font-size: 11px;
+            margin-bottom: 6px;
+            letter-spacing: 1.5px;
+        }
+
+        #minimap-content {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        #minimap-legend {
+            flex: 0 0 85px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding-top: 5px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 9px;
+            color: #8aaacc;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .legend-box {
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            flex-shrink: 0;
+        }
+
+        .legend-icon {
+            font-size: 10px;
+            width: 12px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .legend-circle {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .legend-x {
+            width: 12px;
+            text-align: center;
+            font-size: 10px;
+            font-weight: bold;
+            color: #000000;
+            flex-shrink: 0;
+        }
+
+        #minimap {
+            width: 260px;
+            height: 260px;
+            border-radius: 4px;
+            border: 1px solid #1a2a1a;
+            flex: 0 0 260px;
+        }
+
+        #thinking-box {
+            background: rgba(15, 25, 40, 0.95);
+            border: 1px solid rgba(74, 158, 255, 0.2);
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        #thoughts-content {
+            max-height: 360px;
+            overflow-y: auto;
+        }
+
+        #thoughts-content::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        #thoughts-content::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 2px;
+        }
+
+        #thinking-box h4 {
+            color: #6b9ac4;
+            font-size: 11px;
+            margin-bottom: 6px;
+            letter-spacing: 1.5px;
+        }
+
+        .panel-toggle {
+            cursor: pointer;
+            color: #6b8aa8;
+            margin-right: 5px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        .panel-toggle:hover {
+            color: #a0c0e0;
+        }
+
+        .thought-entry {
+            margin: 4px 0;
+            padding: 5px 7px;
+            border-radius: 4px;
+            font-size: 10px;
+            line-height: 1.4;
+        }
+
+        .thought-entry.reason {
+            background: rgba(74, 158, 255, 0.08);
+            color: #8ab4e6;
+            border-left: 2px solid #4a9eff;
+        }
+
+        .thought-entry.action {
+            background: rgba(100, 140, 180, 0.08);
+            color: #7aa3cc;
+            border-left: 2px solid #5a8ab8;
+        }
+
+        .thought-entry.alert {
+            background: rgba(120, 140, 160, 0.08);
+            color: #9ab0c4;
+            border-left: 2px solid #7a9ab0;
+        }
+
+        .thought-entry.warning {
+            background: rgba(140, 120, 100, 0.08);
+            color: #b8a890;
+            border-left: 2px solid #a09078;
+        }
+
+        .thought-entry.danger {
+            background: rgba(160, 100, 90, 0.08);
+            color: #c89888;
+            border-left: 2px solid #b07060;
+        }
+
+        .thought-entry.info {
+            background: rgba(90, 140, 160, 0.08);
+            color: #8ab0c0;
+            border-left: 2px solid #6a98a8;
+        }
+
+        .thought-entry.mcp-call {
+            background: rgba(80, 120, 150, 0.06);
+            color: #7aa0b8;
+            border-left: 2px solid #5a88a0;
+            font-family: 'Menlo', 'Consolas', monospace;
+            font-size: 9px;
+        }
+
+        .thought-entry.mcp-resp {
+            background: rgba(80, 120, 150, 0.04);
+            color: #6a90a8;
+            border-left: 2px solid #4a789055;
+            font-family: 'Menlo', 'Consolas', monospace;
+            font-size: 9px;
+        }
+
+        .thought-entry.phase {
+            background: rgba(255, 255, 255, 0.05);
+            color: #fff;
+            border: none;
+            font-weight: 700;
+            text-align: center;
+            font-size: 11px;
+            padding: 10px 0;
+            margin: 10px 0;
+            border-top: 1px dashed #555;
+            border-bottom: 1px dashed #555;
+            letter-spacing: 1px;
+        }
+
+        .thought-drone-tag {
+            font-size: 9px;
+            font-weight: 700;
+            margin-right: 4px;
+            padding: 1px 4px;
+            border-radius: 2px;
+        }
+
+        /* Deep Reasoning Tags */
+        .reason-tag {
+            font-weight: 700;
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-size: 8.5px;
+            margin-right: 3px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .obs-tag {
+            background: rgba(78, 204, 163, 0.18);
+            color: #4ecca3;
+            border: 1px solid rgba(78, 204, 163, 0.35);
+        }
+
+        .risk-tag {
+            background: rgba(100, 180, 255, 0.18);
+            color: #64b4ff;
+            border: 1px solid rgba(100, 180, 255, 0.35);
+        }
+
+        .dec-tag {
+            background: rgba(100, 180, 255, 0.18);
+            color: #64b4ff;
+            border: 1px solid rgba(100, 180, 255, 0.35);
+        }
+
+        /* System-level thought (e.g. mission not started) */
+        .thought-entry.system {
+            background: rgba(120, 120, 120, 0.08);
+            color: #888;
+            border-left: 2px solid #555;
+            font-style: italic;
+        }
+
+        #mcp-toggle {
+            display: inline-block;
+            margin-left: 6px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 9px;
+            font-weight: 600;
+            border: 1px solid #4a9eff;
+            color: #6bb6ff;
+            background: rgba(74, 158, 255, 0.1);
+            pointer-events: auto;
+            transition: all 0.2s;
+            vertical-align: middle;
+        }
+
+        #mcp-toggle:hover {
+            background: rgba(74, 158, 255, 0.25);
+        }
+
+        #mcp-toggle.active {
+            background: rgba(74, 158, 255, 0.3);
+            box-shadow: 0 0 8px rgba(74, 158, 255, 0.3);
+        }
+
+        .log-filter-btn {
+            display: inline-block;
+            margin-left: 4px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 9px;
+            font-weight: 600;
+            border: 1px solid rgba(74, 158, 255, 0.4);
+            color: #6bb6ff;
+            background: rgba(74, 158, 255, 0.08);
+            transition: all 0.2s;
+        }
+
+        .log-filter-btn.active {
+            background: rgba(74, 158, 255, 0.3);
+            color: #0a1620;
+            box-shadow: 0 0 8px rgba(74, 158, 255, 0.25);
+        }
+
+        /* === LEFT PANEL STYLING === */
+        #status {
+            position: absolute;
+            bottom: 12px;
+            left: 12px;
+            background: rgba(15, 25, 40, 0.95);
+            border: 1px solid rgba(74, 158, 255, 0.2);
+            border-radius: 6px;
+            padding: 8px 10px;
+            min-width: 220px;
+            max-width: 260px;
+            color: #ccd;
+            font-size: 10px;
+            pointer-events: auto;
+        }
+
+        #status h3 {
+            color: #6b9ac4;
+            margin-bottom: 6px;
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+
+        #drone-fleet {
+            position: absolute;
+            bottom: 240px;
+            /* Increased from 180px to prevent overlap */
+            left: 12px;
+            background: rgba(15, 25, 40, 0.95);
+            border: 1px solid rgba(74, 158, 255, 0.2);
+            border-radius: 6px;
+            padding: 8px 10px;
+            min-width: 220px;
+            max-width: 260px;
+            max-height: calc(100vh - 280px);
+            /* Dynamic height based on viewport */
+            overflow-y: auto;
+            color: #ccd;
+            font-size: 10px;
+            pointer-events: auto;
+        }
+
+        #drone-fleet h3 {
+            color: #6b9ac4;
+            margin-bottom: 6px;
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+
+        .drone-card {
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid rgba(74, 158, 255, 0.15);
+            border-radius: 4px;
+            padding: 6px 8px;
+            margin-bottom: 5px;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+
+        .drone-card:hover {
+            background: rgba(74, 158, 255, 0.08);
+            border-color: rgba(74, 158, 255, 0.3);
+        }
+
+        .drone-card.active {
+            background: rgba(74, 158, 255, 0.15);
+            border-color: #4a9eff;
+            box-shadow: 0 0 8px rgba(74, 158, 255, 0.2);
+        }
+
+        .drone-card:last-child {
+            margin-bottom: 0;
+        }
+
+        .drone-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 3px;
+        }
+
+        .drone-card-name {
+            font-weight: 700;
+            font-size: 11px;
+        }
+
+        .drone-card-status {
+            font-size: 8px;
+            padding: 2px 5px;
+            border-radius: 2px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+
+        .drone-card-status.idle {
+            background: rgba(100, 120, 140, 0.2);
+            color: #8a9cac;
+        }
+
+        .drone-card-status.moving {
+            background: rgba(74, 158, 255, 0.15);
+            color: #7aa8cc;
+        }
+
+        .drone-card-status.scanning {
+            background: rgba(100, 160, 200, 0.15);
+            color: #8ac0e0;
+        }
+
+        .drone-card-status.recharging {
+            background: rgba(180, 160, 100, 0.15);
+            color: #c0a870;
+        }
+
+        .drone-card-status.dead {
+            background: rgba(140, 80, 80, 0.15);
+            color: #b08080;
+        }
+
+        .drone-card-stats {
+            display: flex;
+            gap: 10px;
+            font-size: 9px;
+        }
+
+        .drone-card-stat {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+        }
+
+        .drone-card-stat-label {
+            color: #6a8090;
+            font-size: 8px;
+        }
+
+        .drone-card-stat-value {
+            font-weight: 600;
+            font-size: 9px;
+        }
+
+        .drone-card-actions {
+            display: flex;
+            gap: 3px;
+            margin-top: 4px;
+            pointer-events: auto;
+            position: relative;
+            z-index: 5;
+        }
+
+        .drone-card-btn {
+            padding: 2px 6px;
+            font-size: 8px;
+            font-weight: 600;
+            border-radius: 2px;
+            cursor: pointer;
+            pointer-events: auto;
+            border: 1px solid;
+            transition: all 0.2s;
+            background: transparent;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            position: relative;
+            z-index: 10;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+            outline: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .drone-card-btn:active {
+            transform: scale(0.95);
+        }
+
+        .drone-card-btn.kill {
+            border-color: #8a6060;
+            color: #b08080;
+        }
+
+        .drone-card-btn.kill:hover {
+            background: rgba(140, 80, 80, 0.2);
+        }
+
+        .drone-card-btn.charge {
+            border-color: #5a8ab8;
+            color: #7aa8cc;
+        }
+
+        .drone-card-btn.charge:hover {
+            background: rgba(74, 158, 255, 0.15);
+        }
+
+        .sr {
+            display: flex;
+            justify-content: space-between;
+            margin: 1px 0;
+            font-size: 9px;
+            padding: 2px 0;
+        }
+
+        .sl {
+            color: #6a7a8a;
+            font-size: 9px;
+        }
+
+        .sv {
+            color: #b0c0d0;
+            font-weight: 600;
+            font-size: 9px;
+        }
+
+        .sv.det {
+            color: #7aa8cc;
+        }
+
+        .sv.low {
+            color: #c0a870;
+        }
+
+        #speed-slider {
+            accent-color: #4a9eff;
+            cursor: pointer;
+        }
+
+        #alert-box {
+            position: absolute;
+            top: 60px;
+            /* Below top bar */
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 25, 40, 0.96);
+            border: 2px solid #4a9eff;
+            border-radius: 14px;
+            padding: 14px 36px;
+            color: #8ab4e6;
+            font-size: 16px;
+            font-weight: 700;
+            display: none;
+            text-align: center;
+            white-space: nowrap;
+            box-shadow: 0 0 32px rgba(74, 158, 255, 0.4), 0 6px 24px rgba(0, 0, 0, 0.6);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        #alert-box.show {
+            display: block;
+            animation: survivorPop 3s ease forwards;
+        }
+
+        @keyframes survivorPop {
+            0% {
+                opacity: 0;
+                transform: translateX(-50%) scale(0.75);
+            }
+
+            12% {
+                opacity: 1;
+                transform: translateX(-50%) scale(1.06);
+            }
+
+            22% {
+                transform: translateX(-50%) scale(1);
+            }
+
+            70% {
+                opacity: 1;
+                transform: translateX(-50%) scale(1);
+            }
+
+            100% {
+                opacity: 0;
+                transform: translateX(-50%) scale(0.95);
+            }
+        }
+
+        #instr {
+            position: absolute;
+            bottom: 12px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #334;
+            font-size: 9px;
+            letter-spacing: 1px;
+        }
+
+        .drone-label {
+            position: absolute;
+            pointer-events: none;
+            z-index: 15;
+            background: rgba(15, 25, 45, 0.92);
+            border: 1px solid rgba(74, 158, 255, 0.4);
+            border-radius: 5px;
+            padding: 4px 8px;
+            font-size: 9px;
+            line-height: 1.4;
+            color: #ccd;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            white-space: nowrap;
+            transform: translate(-50%, -100%);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+        }
+
+        .drone-label .dl-name {
+            font-weight: 700;
+            font-size: 10px;
+        }
+
+        .drone-label .dl-bat {
+            color: #7aa8cc;
+        }
+
+        .drone-label .dl-bat.low {
+            color: #b8a080;
+        }
+
+        .drone-label .dl-bat.dead {
+            color: #c07060;
+        }
+
+        .drone-label .dl-rtb {
+            color: #8ab4e6;
+            font-size: 8px;
+        }
+
+        #start-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(15, 25, 45, 0.95);
+            border: 2px solid #4a9eff;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            box-shadow: 0 0 20px rgba(74, 158, 255, 0.3);
+            pointer-events: auto;
+            backdrop-filter: blur(8px);
+        }
+
+        #mission-goal {
+            background: #1a2a40;
+            color: #8ab4e6;
+            border: 1px solid #4a9eff;
+            padding: 8px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: bold;
+            text-transform: uppercase;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        #mission-goal:hover {
+            border-color: #6b9ac4;
+        }
+
+        #mission-goal:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            border-color: #3a5060;
+            color: #5a7080;
+        }
+
+        #start-controls label {
+            color: #6b9ac4;
+            font-weight: bold;
+            letter-spacing: 2px;
+            font-size: 18px;
+            text-transform: uppercase;
+        }
+
+        #start-controls input[type="range"] {
+            width: 250px;
+            accent-color: #4a9eff;
+            cursor: pointer;
+            height: 6px;
+        }
+
+        #start-btn {
+            background: #1a3a5c;
+            border: 1px solid #4a9eff;
+            color: #8ab4e6;
+            padding: 16px 40px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            font-family: inherit;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            transition: all 0.2s;
+        }
+
+        #start-btn:hover {
+            background: #244060;
+            border-color: #6b9ac4;
+        }
+
+        .goal-label {
+            color: #888 !important;
+            font-size: 10px !important;
+            letter-spacing: 1px !important;
+            margin-bottom: -10px;
+        }
+
+        /* Success Popup */
+        #success-modal {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            backdrop-filter: blur(8px);
+            pointer-events: auto;
+        }
+
+        #success-content {
+            background: linear-gradient(135deg, rgba(30, 50, 80, 0.95), rgba(15, 25, 45, 0.98));
+            border: 2px solid #4a9eff;
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            color: #fff;
+            max-width: 450px;
+            width: 90%;
+            box-shadow: 0 0 50px rgba(74, 158, 255, 0.3);
+            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes popIn {
+            0% {
+                transform: scale(0.5);
+                opacity: 0;
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        #success-content h2 {
+            font-size: 32px;
+            color: #6b9ac4;
+            margin-bottom: 20px;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+        }
+
+        .stat-row {
+            font-size: 18px;
+            margin: 10px 0;
+            color: #ccd;
+        }
+
+        .stat-row b {
+            color: #fff;
+        }
+
+        #restart-btn-big {
+            margin-top: 30px;
+            background: #1a3a5c;
+            color: #8ab4e6;
+            border: 1px solid #4a9eff;
+            padding: 12px 30px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 16px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        #restart-btn-big:hover {
+            background: #244060;
+            border-color: #6b9ac4;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="hud">
+        <button id="settings-toggle">⚙️ Settings</button>
+        <div id="settings-panel" class="closed">
+            <h3>Settings</h3>
+            <div id="settings-form"></div>
+            <div class="settings-actions">
+                <button id="settings-save">Save & Reload</button>
+                <span id="settings-status"></span>
+            </div>
+            <p class="settings-note">Changes save via /settings and reset the mission.</p>
+        </div>
+
+        <!-- Top Bar -->
+        <div id="top-bar">
+            <div id="top-bar-left">
+                <div class="top-bar-item">
+                    <span class="top-bar-icon">🌡️</span>
+                    <div style="display:flex; flex-direction:column; align-items:flex-start; gap:1px;">
+                        <span class="top-bar-label">Temperature</span>
+                        <span class="top-bar-value" id="temp-display">32°C</span>
+                    </div>
+                </div>
+                <div style="width:1px; height:25px; background:rgba(74,158,255,0.2);"></div>
+                <div class="top-bar-item">
+                    <span class="top-bar-icon">�</span>
+                    <div style="display:flex; flex-direction:column; align-items:flex-start; gap:1px;">
+                        <span class="top-bar-label">Wind</span>
+                        <span class="top-bar-value" id="wind-display">35 km/h NE</span>
+                    </div>
+                </div>
+            </div>
+            <div id="top-bar-center">
+                <div id="title">Swarm Intelligence Rescue System</div>
+            </div>
+            <div id="top-bar-right">
+                <div class="top-bar-item">
+                    <div style="display:flex; flex-direction:column; align-items:flex-end; gap:1px;">
+                        <span class="top-bar-label">Current Time</span>
+                        <span class="top-bar-value" id="current-time">--:--:--</span>
+                    </div>
+                    <span class="top-bar-icon">🕐</span>
+                </div>
+                <div style="width:1px; height:25px; background:rgba(74,158,255,0.2);"></div>
+                <div class="top-bar-item">
+                    <span class="top-bar-icon">👤</span>
+                    <div style="display:flex; flex-direction:column; align-items:flex-start; gap:1px;">
+                        <span class="top-bar-label">Operator</span>
+                        <span class="top-bar-value">ADMIN</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="cam-panel">
+            <button class="cam-btn active" onclick="cycleCameraView()">
+                <span class="cam-icon">🎥</span>
+                <span class="cam-label" id="cam-view-label">Overview</span>
+                <span class="cam-shortcut">[0]</span>
+            </button>
+        </div>
+        <div id="right-panel">
+            <div id="minimap-box">
+                <h4><span class="panel-toggle" id="toggle-minimap"
+                        onclick="togglePanel('minimap-content', 'toggle-minimap')">[-]</span> ⬡ 2D TACTICAL MAP</h4>
+                <div id="minimap-content">
+                    <div id="minimap-legend">
+                        <div class="legend-item">
+                            <div class="legend-box" style="background: #441100; border-color: #ff440077;"></div>
+                            <span>Fire Zone</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-box" style="background: #332810; border-color: #ffaa0055;"></div>
+                            <span>Smoke</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-box" style="background: #222; border-color: #444;"></div>
+                            <span>No-Fly</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-box" style="background: #1a3a2a; border-color: #33aa3355;"></div>
+                            <span>Scanned</span>
+                        </div>
+                        <div class="legend-item" style="margin-top: 4px;">
+                            <div class="legend-circle" style="background: #ff3300; box-shadow: 0 0 4px #ff3300;"></div>
+                            <span>Survivor</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-circle" style="background: #00ff44; box-shadow: 0 0 4px #00ff44;"></div>
+                            <span>Rescued</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-x">✕</div>
+                            <span>Dead</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-icon">🔥</div>
+                            <span>Active Fire</span>
+                        </div>
+                    </div>
+                    <canvas id="minimap" width="260" height="260"></canvas>
+                </div>
+            </div>
+            <div id="thinking-box">
+                <h4><span class="panel-toggle" id="toggle-thoughts"
+                        onclick="togglePanel('thoughts-content', 'toggle-thoughts')">[-]</span> 🧠 DRONE THOUGHTS
+                    <span class="log-filter-btn active" id="filter-all" onclick="setLogFilter('all')">All</span>
+                    <span class="log-filter-btn" id="filter-llm" onclick="setLogFilter('llm')">LLM</span>
+                    <span class="log-filter-btn" id="filter-mcp" onclick="setLogFilter('mcp')">MCP</span>
+                </h4>
+                <div id="thoughts-content">
+                    <div id="thoughts"></div>
+                </div>
+            </div>
+        </div>
+        <div id="drone-fleet">
+            <h3><span class="panel-toggle" id="toggle-fleet"
+                    onclick="togglePanel('fleet-content', 'toggle-fleet')">[-]</span> ⬡ DRONE FLEET</h3>
+            <div id="fleet-content">
+                <div id="fleet-list">Initializing...</div>
+            </div>
+        </div>
+        <div id="status">
+            <h3><span class="panel-toggle" id="toggle-status"
+                    onclick="togglePanel('status-content', 'toggle-status')">[-]</span> ⬡ MISSION</h3>
+            <div id="status-content">
+                <div id="sc">Initializing...</div>
+                <div id="connection-status"
+                    style="margin-top: 6px; font-size: 9px; padding: 3px 6px; background: rgba(0,0,0,0.2); border-radius: 3px; border: 1px solid rgba(74,158,255,0.1); margin-bottom: 6px;">
+                    <span><span id="llm-dot" style="color:#b07060">●</span> MCP</span>
+                </div>
+                <div id="speed-slider-box" style="display:flex; flex-direction:column; gap:4px;">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <label style="font-size:9px; color:#6a8090;">⚡</label>
+                        <input type="range" id="speed-slider" min="5" max="50" value="20"
+                            oninput="updateSpeed(this.value)" style="flex:1;">
+                        <span id="speed-val" style="font-size:9px; color:#7aa8cc; min-width:32px;">0.20</span>
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:3px;">
+                        <button id="pause-btn" onclick="togglePause()"
+                            style="background:rgba(74,158,255,0.08);border:1px solid rgba(74,158,255,0.2);color:#7aa8cc; padding:3px 6px; border-radius:3px; font-size:9px; cursor:pointer;">⏸
+                            Pause</button>
+                        <button id="scan-toggle-btn" onclick="toggleScannedSectors()"
+                            style="background:rgba(74,158,255,0.08);border:1px solid rgba(74,158,255,0.2);color:#7aa8cc; padding:3px 6px; border-radius:3px; font-size:9px; cursor:pointer;">👁
+                            Scan</button>
+                        <button onclick="toggleDayNight()"
+                            style="background:rgba(74,158,255,0.08);border:1px solid rgba(74,158,255,0.2);color:#7aa8cc; padding:3px 6px; border-radius:3px; font-size:9px; cursor:pointer;">🌙
+                            Night</button>
+                        <button onclick="location.reload()"
+                            style="background:rgba(100,120,140,0.08);border:1px solid rgba(100,120,140,0.2);color:#8a9cac; padding:3px 6px; border-radius:3px; font-size:9px; cursor:pointer;">↻
+                            Reset</button>
+                    </div>
+                    <button id="add-drone-btn" onclick="addNewDrone()"
+                        style="background:rgba(90,110,130,0.05);border:1px solid rgba(90,110,130,0.15);color:#6a8090; padding:4px 8px; border-radius:3px; font-size:9px; cursor:not-allowed; pointer-events:none; opacity:0.5; width:100%;">+
+                        Add Drone</button>
+                </div>
+            </div>
+        </div>
+        <div id="alert-box"></div>
+        <div id="instr">Click 🎥 or drone cards to cycle camera views · 0=Overview 6=World 7=Swarm · Click+Drag to orbit
+        </div>
+
+        <div id="start-controls">
+            <label
+                style="color:#8aaacc; font-size:12px; font-weight:bold; letter-spacing:1px; margin-bottom:-10px;">MISSION
+                PARAMETERS</label>
+            <div>
+                <label>Survivors: <span id="surv-count-val"
+                        style="color:#fff; font-size:16px; font-weight:900;">5</span></label>
+                <input type="range" id="surv-count" min="1" max="15" value="5"
+                    oninput="document.getElementById('surv-count-val').textContent=this.value" style="width: 140px;">
+            </div>
+            <div>
+                <label>Drones: <span id="drone-count-val"
+                        style="color:#fff; font-size:16px; font-weight:900;">5</span></label>
+                <input type="range" id="drone-count" min="1" max="5" value="5"
+                    oninput="document.getElementById('drone-count-val').textContent=this.value" style="width: 140px;">
+            </div>
+            <div style="display:flex; flex-direction:column; gap:4px; align-items:center;">
+                <label
+                    style="color:#aaa; font-size:10px; font-weight:bold; letter-spacing:1px; margin-bottom:0;">GOAL</label>
+                <select id="mission-goal"
+                    style="background:#1a2a40; color:#8ab4e6; border:1px solid #4a9eff; padding:5px 10px; border-radius:5px; cursor:pointer; font-family:inherit; font-size:12px; font-weight:600; outline:none; text-transform:uppercase;">
+                    <option value="scanAll">Scan All Sectors</option>
+                    <option value="findAll">Find All Survivors</option>
+                </select>
+            </div>
+            <button id="start-btn" onclick="startMission()">START SIMULATION</button>
+        </div>
+
+        <div id="success-modal">
+            <div id="success-content">
+                <h2>Mission Success</h2>
+                <div class="stat-row">Time Elapsed: <b id="final-time">-</b></div>
+                <div class="stat-row">Survivors Found: <b id="final-found">-</b></div>
+                <div class="stat-row">Sectors Scanned: <b id="final-sectors">100/100</b></div>
+                <button id="restart-btn-big" onclick="location.reload()">RESTART MISSION</button>
+            </div>
+        </div>
+        <div id="drone-label-0" class="drone-label"></div>
+        <div id="drone-label-1" class="drone-label"></div>
+        <div id="drone-label-2" class="drone-label"></div>
+        <div id="drone-label-3" class="drone-label"></div>
+        <div id="drone-label-4" class="drone-label"></div>
+    </div>
+
+    <script src="settings.js"></script>
+    <!-- Serve this UI from the simulation/ui directory via ./scripts/run_sim.sh or `python -m http.server 8001` to avoid file:// CORS issues. -->
+    <script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }
+</script>
+    <script type="module" src="js/main.js"></script>
+</body>
+
+</html>
