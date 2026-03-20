@@ -3,7 +3,17 @@
   "sector_rows": 10,
   "sector_cols": 10,
   "passive_survivor_radius": 18.0,
+  "drain_per_unit": 0.12,
+  "scan_cost": 0.7,
+  "safety_margin": 6.0,
   "smoke_multiplier": 1.4,
-  "base_x": 5,
-  "base_z": 5
+  "sector_scan_radius": 30.0,
+  "thermal_scan_radius": 12.0,
+  "autopilot_speed": 6.0,
+  "base_x": 5.0,
+  "base_y": 5.0,
+  "base_z": 5.0,
+  "wind_angle_deg": 45.0,
+  "wind_speed_kmh": 32.0,
+  "wind_desc": "NE steady"
 }
