@@ -38,6 +38,7 @@ if not logger.handlers:
 ACTIVE_STATUSES = {"active", "moving", "scanning", "idle"}
 DEFAULT_INTERVAL = float(os.getenv("ORCHESTRATOR_INTERVAL", "0.3"))
 IDLE_INTERVAL = float(os.getenv("ORCHESTRATOR_IDLE_INTERVAL", "5.0"))
+MIN_LLM_INTERVAL = float(os.getenv("ORCHESTRATOR_MIN_LLM_INTERVAL", "10.0"))  # throttle LLM calls
 
 
 # 1) Pull world state using MCP tool
@@ -232,6 +233,8 @@ def orchestrate(loop: bool = True, interval: float = DEFAULT_INTERVAL, max_steps
     """Main loop: pull world, detect change, invoke LLM, push plan, sleep."""
     client = _groq_client()
     wait_for_active = os.getenv("ORCHESTRATOR_WAIT_FOR_ACTIVE", "true").lower() not in ("0", "false", "no")
+    # track last time we successfully invoked the LLM to enforce MIN_LLM_INTERVAL
+    last_llm_ts = 0.0
 
     last_plan: Dict[str, Any] = {
         "mode": "idle",
@@ -290,15 +293,21 @@ def orchestrate(loop: bool = True, interval: float = DEFAULT_INTERVAL, max_steps
 
         prompt_text = build_prompt(world)
 
-        if crucial_change:
+        now = time.monotonic()
+        llm_window_ok = (now - last_llm_ts) >= MIN_LLM_INTERVAL
+
+        if crucial_change and llm_window_ok:
             parsed = parse_llm_result(invoke_llm(world, client, prompt_text))
             if parsed:
                 plan = parsed
                 plan["llm_model"] = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
                 llm_used = True
                 llm_reason = "llm_called"
+                last_llm_ts = now
             else:
                 llm_reason = "llm_unavailable_or_invalid"
+        elif crucial_change and not llm_window_ok:
+            llm_reason = f"rate_limited_{MIN_LLM_INTERVAL}s"
         else:
             llm_reason = "no_crucial_change"
 
