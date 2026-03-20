@@ -5,27 +5,33 @@ export function initMinimap(state, utils) {
     const MAP_CELL = (MAP_W - MAP_PAD * 2) / state.SECTORS;
 
     function draw() {
-        const { GRID, SECTORS, SCAN_RADIUS, sectorMeshes, obstacles, SURVIVORS, drones, DRONE_COLORS, DRONE_NAMES, activeDrone } = state;
+        const { GRID, SECTORS, SCAN_RADIUS, sectorMeshes, obstacles, SURVIVORS, drones, DRONE_COLORS, DRONE_NAMES, activeDrone, showThermalOnMap } = state;
         const { hazardOf, hslWithAlpha } = utils;
         mapCtx.clearRect(0, 0, MAP_W, MAP_H);
         mapCtx.fillStyle = '#0d1520';
         mapCtx.fillRect(0, 0, MAP_W, MAP_H);
 
         for (let r = 0; r < SECTORS; r++) for (let c = 0; c < SECTORS; c++) {
-            const h = hazardOf(r, c), scanned = sectorMeshes[`S${r}_${c}`]?.scanned;
-            let fill = '#1a3a1a';
-            if (h === 'fire') fill = scanned ? '#663300' : '#441100';
-            else if (h === 'smoke') fill = scanned ? '#1a4a2a' : '#332810';
-            else fill = scanned ? '#006633' : '#1a2a1a';
+            const sm = sectorMeshes[`S${r}_${c}`] || {};
+            const h = hazardOf(r, c);
+            const discovered = sm.discovered;
+            const thermal = sm.thermal_scanned;
+            let fill = '#1a2a1a'; // base
+            if (thermal && showThermalOnMap) {
+                fill = h === 'fire' ? '#ff9933' : '#66ff33'; // high-contrast for thermal
+            } else if (discovered) {
+                fill = h === 'fire' ? '#4a3322' : '#2a3a2a'; // subtle discovered
+            } else if (h === 'fire') {
+                fill = '#441100';
+            } else if (h === 'smoke') {
+                fill = '#332810';
+            }
             const x = MAP_PAD + c * MAP_CELL, y = MAP_PAD + r * MAP_CELL;
             mapCtx.fillStyle = fill;
             mapCtx.fillRect(x + 1, y + 1, MAP_CELL - 2, MAP_CELL - 2);
             mapCtx.strokeStyle = '#2a3a2a'; mapCtx.lineWidth = 0.5;
             mapCtx.strokeRect(x + 1, y + 1, MAP_CELL - 2, MAP_CELL - 2);
-            if (scanned) {
-                mapCtx.fillStyle = h === 'fire' ? 'rgba(255,120,0,0.28)' : 'rgba(0,255,100,0.35)';
-                mapCtx.fillRect(x + 1, y + 1, MAP_CELL - 2, MAP_CELL - 2);
-            }
+            // No extra overlay; colors already encode thermal/discovered
             if (h === 'fire') { mapCtx.fillStyle = '#ff440066'; mapCtx.font = '12px sans-serif'; mapCtx.fillText('🔥', x + MAP_CELL / 2 - 7, y + MAP_CELL / 2 + 5); }
         }
 

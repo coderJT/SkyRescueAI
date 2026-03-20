@@ -83,13 +83,14 @@ export function registerHud(state, mcpClient) {
   updateCurrentTime();
   setInterval(updateCurrentTime, 1000);
 
-  // Connection status pinger
+  // Connection status pinger (uses global mcpClient set by main.js)
   setInterval(() => {
     const dot = document.getElementById('llm-dot');
     if (!dot) return;
-    if (mcpClient && mcpClient.connected) {
+    const mc = window.mcpClient;
+    if (mc && mc.connected) {
       dot.style.color = '#7aa8cc';
-      dot.parentElement.title = 'Connected to MCP Server (SSE)';
+      dot.parentElement.title = 'Connected to MCP Server (API bridge)';
     } else {
       dot.style.color = '#b07060';
       dot.parentElement.title = 'MCP Server unreachable';
