@@ -234,6 +234,11 @@ let initReady = false;
 
     async function notifyArrival(droneIdx, sectorId) {
         const name = DRONE_NAMES[droneIdx] || `drone_${droneIdx + 1}`;
+        const drone = drones[droneIdx];
+        if (drone) {
+            drone.status = 'scanning';
+            drone.scanning_pending = true;
+        }
         try {
             await apiClient.callTool('thermal_scan', {
                 id: name,
@@ -244,6 +249,11 @@ let initReady = false;
             addThought(droneIdx, 'info', `🌡️ Arrived at ${sectorId}, performing thermal scan.`);
         } catch (e) {
             addThought(droneIdx, 'warning', `Thermal scan failed at ${sectorId}: ${e.message || e}`);
+        } finally {
+            if (drone) {
+                drone.status = 'idle';
+                drone.scanning_pending = false;
+            }
         }
     }
 
@@ -805,14 +815,16 @@ let initReady = false;
                         d.targetPos = d.targetPos || d.group.position.clone();
                         if (sDrone.battery != null) d.battery = sDrone.battery;
                         d.status = 'scanning';
+                        d.scanning_pending = true;
                     } else if (sector && sector.center) {
                         const [cx, cz] = sector.center;
                         if (!d.targetPos) d.targetPos = d.group.position.clone();
                         d.targetPos.set(cx, DRONE_FLY_HEIGHT, cz);
                         d.target = { sector: sDrone.target_sector, x: cx, z: cz };
                         d.state = 'moving';
-                        d.status = 'moving';
+                        d.status = isScanning(d) ? 'scanning' : 'moving';
                         if (sDrone.battery != null) d.battery = sDrone.battery;
+                        d.scanning_pending = false;
                         d.arrivalNotified = false;
                     } else {
                         // No target; stay at current pose
@@ -820,8 +832,9 @@ let initReady = false;
                         d.targetPos = d.group.position.clone();
                         d.target = null;
                         d.state = sDrone.status || 'idle';
-                        d.status = sDrone.status || d.status || "idle";
+                        d.status = isScanning(d) ? 'scanning' : (sDrone.status || d.status || "idle");
                         if (sDrone.battery != null) d.battery = sDrone.battery;
+                        d.scanning_pending = false;
                         d.arrivalNotified = false;
                     }
                 });

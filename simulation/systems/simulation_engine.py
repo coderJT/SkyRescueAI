@@ -269,11 +269,7 @@ class SimulationEngine:
             act = actions[0] if len(actions) == 1 else actions[[d.id for d in self.drones.values()].index(drone.id)]
             if not act:
                 return
-            if act.get("action") == "thermal_scan":
-                sector_id = act.get("sector") or sector_id
-                if sector_id:
-                    self.thermal_scan(drone.id, sector_id)
-            elif act.get("action") == "move":
+            if act.get("action") == "move":
                 tx, _, tz = act.get("target", (None, None, None))
                 if tx is not None and tz is not None:
                     sid = act.get("sector") or self._get_sector_at(tx, tz)
@@ -873,6 +869,11 @@ class SimulationEngine:
 
         # Simulate 3 seconds scan
         time.sleep(3)
+
+        try:
+            log_event(f"thermal_scan start drone={drone_id} sector={current_sid}", drone_id=drone_id, mission_log=self.mission_log)
+        except Exception:
+            pass
 
         # Detect survivor here
         detected = []

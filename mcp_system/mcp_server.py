@@ -256,48 +256,19 @@ def assign_targets(waiting: list[str] = None):
                 pass
             continue
 
-        # Always honor immediate thermal scan requests, even if drone isn't marked waiting
+        # Skip non-waiting drones to avoid churn
         if not is_waiting:
-            if act and act.get("action") == "thermal_scan":
-                sector_id = act.get("sector")
-                res = engine.thermal_scan(did, sector_id) if sector_id else {"error": "missing sector"}
-                assignments.append({"drone_id": did, "sector_id": sector_id, "reason": act.get("reason", "swarm_thermal_scan"), "result": res})
-                try:
-                    _drone_logger(did).info("thermal_scan (non-waiting) sector=%s result=%s", sector_id, res)
-                except Exception:
-                    pass
             continue
 
         if not act:
             # Fallback when swarm returns no action for this drone
-            current_sid = engine.get_sector_at(engine.drones[did].coordinates[0], engine.drones[did].coordinates[2])
-            sector = engine.sectors.get(current_sid, {})
-            if sector.get("discovered") and not sector.get("thermal_scanned"):
-                res = engine.thermal_scan(did, current_sid)
-                _record_target_prio(did, None)
-                assignments.append({"drone_id": did, "sector_id": current_sid, "reason": "fallback_arrival_thermal", "result": res})
-                try:
-                    _drone_logger(did).info("fallback thermal_scan sector=%s result=%s", current_sid, res)
-                except Exception:
-                    pass
-            else:
-                target = swarm_system._patrol_target(idx, len(engine.drones), world)
-                sid = engine._get_sector_at(target[0], target[2])
-                engine.set_drone_target(did, sid, "fallback_patrol")
-                _record_target_prio(did, sid)
-                assignments.append({"drone_id": did, "sector_id": sid, "reason": "fallback_patrol"})
-                try:
-                    _drone_logger(did).info("fallback patrol sector=%s target=%s", sid, target)
-                except Exception:
-                    pass
-            continue
-
-        if act.get("action") == "thermal_scan":
-            sector_id = act.get("sector")
-            res = engine.thermal_scan(did, sector_id) if sector_id else {"error": "missing sector"}
-            assignments.append({"drone_id": did, "sector_id": sector_id, "reason": act.get("reason", "swarm_thermal_scan"), "result": res})
+            target = swarm_system._patrol_target(idx, len(engine.drones), world)
+            sid = engine._get_sector_at(target[0], target[2])
+            engine.set_drone_target(did, sid, "fallback_patrol")
+            _record_target_prio(did, sid)
+            assignments.append({"drone_id": did, "sector_id": sid, "reason": "fallback_patrol"})
             try:
-                _drone_logger(did).info("thermal_scan sector=%s result=%s", sector_id, res)
+                _drone_logger(did).info("fallback patrol sector=%s target=%s", sid, target)
             except Exception:
                 pass
             continue
@@ -372,20 +343,6 @@ def report_telemetry(drone_id: str, battery: float, x: float, y: float, z: float
     Update drone telemetry from UI/agent.
     """
     res = engine.update_drone_telemetry(drone_id, battery, x, y, z, status, clear_target)
-    # Opportunistic thermal scan on arrival when swarm might stall
-    try:
-        if status == "idle" and clear_target:
-            current_sid = engine.get_sector_at(x, z)
-            sector = engine.sectors.get(current_sid, {})
-            if sector.get("discovered") and not sector.get("thermal_scanned"):
-                res_scan = engine.thermal_scan(drone_id, current_sid)
-                logger.debug("report_telemetry fallback thermal_scan drone=%s sector=%s result=%s", drone_id, current_sid, res_scan)
-                try:
-                    _drone_logger(drone_id).info("arrival thermal_scan sector=%s result=%s", current_sid, res_scan)
-                except Exception:
-                    pass
-    except Exception:
-        logger.exception("report_telemetry fallback thermal_scan failed")
     try:
         hazard_hit = res.get("hazard_hit") if isinstance(res, dict) else None
         if hazard_hit and hazard_hit.get("sector_id"):

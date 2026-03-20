@@ -338,16 +338,6 @@ def swarm_step(drones: List[Any], world: Dict[str, Any], plan: Dict[str, Any] | 
             )
             continue
 
-        # If drone is idle on a discovered/assigned sector, request a thermal scan
-        current_sid, _ = _sector_at(world, drone.coordinates[0], drone.coordinates[2])
-        if current_sid and (drone.target_sector == current_sid or getattr(drone, "target_sector", None) is None):
-            sector = world.get("sectors", {}).get(current_sid, {})
-            # Only request thermal scan once per sector
-            if sector.get("discovered") and not sector.get("thermal_scanned"):
-                actions.append({"action": "thermal_scan", "sector": current_sid, "reason": "arrived_on_sector"})
-                _drone_logger(did).info("thermal_scan requested sector=%s reason=arrived_on_sector", current_sid)
-                continue
-
         # 2) Battery-feasible check + return
         # If below reserve irrespective of target, recall
         reserve = constraints.get("battery_recall_threshold") or settings.safety_margin
