@@ -645,15 +645,34 @@ class SimulationEngine:
             log_event(f"STATE: {drone_id} target set to __RECALL__", drone_id=drone_id, mission_log=self.mission_log)
             return {"status": "success", "drone_id": drone_id, "target": "__RECALL__"}
 
-        # Estimate battery usage for round trip
+        # Estimate battery usage for round trip (aligned with move_drain/scan_drain)
         center = self.sectors[sector_id]["center"]
-        multiplier = self._battery_multiplier_at(center[0], center[1])
+        hazard_mult = drone_system.hazard_multiplier_for_sector(
+            sector_id,
+            fire_multipliers=self.fire_multipliers,
+            smoke_sectors=self.smoke_sector_ids,
+            smoke_multiplier=self.smoke_multiplier,
+        )
         to_target = math.hypot(center[0] - drone.coordinates[0], center[1] - drone.coordinates[2])
         to_base = math.hypot(center[0] - settings.base_x, center[1] - settings.base_z)
-        round_trip_cost = ((to_target + to_base) * settings.drain_per_unit * multiplier) + (settings.scan_cost * multiplier) + settings.safety_margin
+        move_cost = (to_target + to_base) * settings.drain_per_unit
+        scan_cost = drone_system.scan_drain(settings, hazard_mult)
+        round_trip_cost = move_cost + scan_cost + settings.safety_margin
         if drone.battery_remaining < round_trip_cost:
-            drone.target_sector = None
-            return {"error": f"Insufficient battery for {sector_id}: need ~{round_trip_cost:.1f}% but have {drone.battery_remaining:.1f}%"}
+            # auto-divert to base instead of leaving drone idle
+            drone.target_sector = "__RECALL__"
+            log_event(
+                "insufficient battery=%.2f need~=%.2f sector=%s -> recall"
+                % (drone.battery_remaining, round_trip_cost, sector_id),
+                drone_id=drone_id,
+                mission_log=self.mission_log,
+            )
+            return {
+                "status": "recall",
+                "drone_id": drone_id,
+                "target": "__RECALL__",
+                "error": f"Insufficient battery for {sector_id}: need ~{round_trip_cost:.1f}% but have {drone.battery_remaining:.1f}%",
+            }
 
         # Update sector status
         self.sectors[sector_id]["assigned_to"] = drone_id

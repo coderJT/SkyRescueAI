@@ -293,7 +293,8 @@ def assign_targets(waiting: list[str] = None):
 
         # Handle return request
         if act.get("action") == "return":
-            engine.set_drone_target(did, "__RECALL__", act.get("reason", "swarm_return"))
+            # engine.set_drone_target(did, "__RECALL__", act.get("reason", "swarm_return"))
+            engine.recall_for_recharging(did)
             _record_target_prio(did, "__RECALL__")
             assignments.append({"drone_id": did, "sector_id": "__RECALL__", "reason": act.get("reason", "swarm_return")})
             try:
