@@ -13,6 +13,8 @@ class Drone:
         self.target_sector = None
         self.current_reason = None
         self.nav = None
+        self.scanning_pending = False
+        self.force_recall_requested = False
 
     def move_to(self, x: float, y: float, z: float):
         self.coordinates = (x, y, z)

@@ -129,7 +129,7 @@ def _patrol_target(
     anchor: Optional[Tuple[float, float, float]] = None,
     avoid_sid: Optional[str] = None,
 ) -> Tuple[float, float, float]:
-    """Spread drones radially; if anchor provided, stay near that anchor. Skip already scanned sectors."""
+    """Spread drones radially; if anchor provided, stay near that anchor. Skip already thermal-scanned sectors."""
     grid = int(world.get("grid_size", 200))
     sectors = world.get("sectors", {})
     attempts = 0
@@ -152,7 +152,10 @@ def _patrol_target(
         if avoid_sid and sid == avoid_sid:
             attempts += 1
             continue
-        if sid and sectors.get(sid, {}).get("scanned"):
+        if sid and sectors.get(sid, {}).get("thermal_scanned"):
+            attempts += 1
+            continue
+        if sid and sectors.get(sid, {}).get("assigned_to"):
             attempts += 1
             continue
         return last
@@ -265,12 +268,16 @@ def parse_priorities(priorities: Optional[List[Any]], world: Dict[str, Any], pla
 
 
 def _respond_if_on_hazard(drone, world: Dict[str, Any]) -> Optional[Action]:
-    """If drone stands in an unscanned hazard sector, scan immediately."""
+    """If drone stands in a hazard sector not yet thermally scanned, scan immediately."""
+    if getattr(drone, "status", None) in ("scanning", "charging", "offline"):
+        return None
+    if getattr(drone, "scanning_pending", False):
+        return None
     sid, sector = _sector_at(world, drone.coordinates[0], drone.coordinates[2])
     if not sector:
         return None
     haz = sector.get("hazard") or sector.get("true_hazard")
-    if haz in ("fire", "smoke") and not sector.get("scanned"):
+    if haz in ("fire", "smoke") and not sector.get("thermal_scanned"):
         cx, cz = sector.get("center", (None, None))
         if cx is None or cz is None:
             return None
@@ -289,7 +296,7 @@ def _score_sector(drone, sector: Sector, *, hazard_bias: float = 0.0, sector_bon
     hazard = sector.get("hazard") or sector.get("true_hazard")
     base = (_hazard_weight(hazard) + hazard_bias) * 10
     dist_penalty = _dist2d((sector["center"][0], 0, sector["center"][1]), drone.coordinates) * 0.1
-    scanned_penalty = 5 if sector.get("scanned") else 0
+    scanned_penalty = 5 if sector.get("thermal_scanned") else 0
     return base + hazard_bonus + sector_bonus - dist_penalty - scanned_penalty
 
 
@@ -332,9 +339,9 @@ def swarm_step(drones: List[Any], world: Dict[str, Any], plan: Dict[str, Any] | 
 
     hazard_pool = [
         h for h in hazards
-        if not h.get("scanned")
-        and not h.get("assigned_to")
-    ]
+        if not h.get("thermal_scanned")
+        or not h.get("assigned_to")
+    ]    
 
     assigned_ids = set()
     actions: List[Action] = []
@@ -348,12 +355,17 @@ def swarm_step(drones: List[Any], world: Dict[str, Any], plan: Dict[str, Any] | 
         # 6) Immediate scan if standing on hazard
         scan_action = _respond_if_on_hazard(drone, world)
         if scan_action:
-            actions.append(scan_action)
-            _drone_logger(did).info(
-                "hold_scan sector=%s reason=%s",
-                scan_action.get("sector") or _sector_at(world, drone.coordinates[0], drone.coordinates[2])[0],
-                scan_action.get("reason"),
-            )
+            target_sid = scan_action.get("sector")
+            if current_target == target_sid:
+                # Already targeting this hazard tile; avoid target churn/log spam.
+                actions.append({"action": "noop", "reason": "holding hazard scan target"})
+            else:
+                actions.append(scan_action)
+                _drone_logger(did).info(
+                    "hold_scan sector=%s reason=%s",
+                    target_sid or _sector_at(world, drone.coordinates[0], drone.coordinates[2])[0],
+                    scan_action.get("reason"),
+                )
             continue
 
         # 2) Battery-feasible check + return

@@ -205,6 +205,9 @@ def assign_target(drone_id: str, sector_id: str, reason: str = None):
     """
     Assign a single drone to a sector.
     """
+    sector_meta = engine.sectors.get(sector_id, {})
+    if sector_meta.get("assigned_to") and sector_meta.get("assigned_to") != drone_id:
+        return {"error": f"Sector {sector_id} already assigned to {sector_meta.get('assigned_to')}"}
     res = engine.set_drone_target(drone_id, sector_id, reason)
     _log_tool("assign_target", {"drone_id": drone_id, "sector_id": sector_id, "reason": reason}, res)
     return res
@@ -247,8 +250,12 @@ def assign_targets(waiting: list[str] = None):
         if did in explicit:
             sector_id = explicit[did]["sector_id"]
             reason = explicit[did].get("reason", "LLM assignment")
-            if engine.sectors.get(sector_id, {}).get("scanned"):
+            sector_meta = engine.sectors.get(sector_id, {})
+            if sector_meta.get("thermal_scanned"):
                 logger.debug("explicit assignment skipped (scanned) drone=%s sector=%s", did, sector_id)
+                continue
+            if sector_meta.get("assigned_to") and sector_meta.get("assigned_to") != did:
+                logger.debug("explicit assignment skipped (already_assigned) drone=%s sector=%s owner=%s", did, sector_id, sector_meta.get("assigned_to"))
                 continue
             res = engine.set_drone_target(did, sector_id, reason)
             if isinstance(res, dict) and res.get("status") == "recall":
@@ -273,6 +280,9 @@ def assign_targets(waiting: list[str] = None):
             # Fallback when swarm returns no action for this drone
             target = swarm_system._patrol_target(idx, len(engine.drones), world)
             sid = engine._get_sector_at(target[0], target[2])
+            sector_meta = engine.sectors.get(sid, {})
+            if sector_meta.get("assigned_to") and sector_meta.get("assigned_to") != did:
+                continue
             res = engine.set_drone_target(did, sid, "fallback_patrol")
             if isinstance(res, dict) and res.get("status") == "recall":
                 assignments.append({"drone_id": did, "sector_id": "__RECALL__", "reason": "battery_recall"})
@@ -312,8 +322,7 @@ def assign_targets(waiting: list[str] = None):
 
         # Handle return request
         if act.get("action") == "return":
-            # engine.set_drone_target(did, "__RECALL__", act.get("reason", "swarm_return"))
-            engine.recall_for_recharging(did)
+            engine.set_drone_target(did, "__RECALL__", act.get("reason", "swarm_return"))
             _record_target_prio(did, "__RECALL__")
             assignments.append({"drone_id": did, "sector_id": "__RECALL__", "reason": act.get("reason", "swarm_return")})
             try:
@@ -336,14 +345,23 @@ def assign_targets(waiting: list[str] = None):
         sector_id = act.get("sector") or engine._get_sector_at(tx, tz)
         if not sector_id:
             continue
-        if engine.sectors.get(sector_id, {}).get("scanned"):
+        sector_meta = engine.sectors.get(sector_id, {})
+        if sector_meta.get("thermal_scanned"):
             logger.debug("move assignment skipped (scanned) drone=%s sector=%s", did, sector_id)
             try:
                 _drone_logger(did).info("assignment_skipped_scanned sector=%s", sector_id)
             except Exception:
                 pass
             continue
+        if sector_meta.get("assigned_to") and sector_meta.get("assigned_to") != did:
+            logger.debug("move assignment skipped (already_assigned) drone=%s sector=%s owner=%s", did, sector_id, sector_meta.get("assigned_to"))
+            continue
         reason = act.get("reason", "swarm_step")
+
+        # Avoid re-applying the same target every tick.
+        drone_obj = engine.drones.get(did)
+        if drone_obj and getattr(drone_obj, "target_sector", None) == sector_id:
+            continue
 
         # Set drone target (doesn't move the drone)
         res = engine.set_drone_target(did, sector_id, reason)
@@ -410,6 +428,12 @@ def report_telemetry(drone_id: str, battery: float, x: float, y: float, z: float
             if current_target == sector_id and lock_until and now < lock_until:
                 logger.debug("hazard_hit ignored (same target, locked) drone=%s sector=%s", drone_id, sector_id)
                 return res
+            if current_target == sector_id:
+                logger.debug("hazard_hit ignored (same target) drone=%s sector=%s", drone_id, sector_id)
+                return res
+            if current_target == "__RECALL__":
+                logger.debug("hazard_hit ignored (recall in progress) drone=%s sector=%s", drone_id, sector_id)
+                return res
 
             # Skip downgrades; allow upgrades even if locked (fire should preempt smoke)
             if current_target and _hz_weight(current_hazard) > _hz_weight(hit_hazard):
@@ -437,6 +461,12 @@ def report_telemetry(drone_id: str, battery: float, x: float, y: float, z: float
             if cd and cd.get("sector") == sector_id and (now - cd.get("ts", 0)) < 3.0 and _hz_weight(hit_hazard) <= _hz_weight(current_hazard):
                 logger.debug("hazard_hit ignored (cooldown) drone=%s sector=%s", drone_id, sector_id)
                 return res
+            
+            # Check if sector is already assigned to a different drone
+            if engine.sectors.get(sector_id, {}).get("assigned_to") and engine.sectors.get(sector_id, {}).get("assigned_to") != drone_id:
+                logger.debug("hazard_hit ignored (already assigned) drone=%s sector=%s owner=%s", drone_id, sector_id, engine.sectors.get(sector_id, {}).get("assigned_to"))
+                return res
+            
             _hazard_redirect_cooldown[drone_id] = {"sector": sector_id, "ts": now}
 
             # Clear previous assignment for this drone

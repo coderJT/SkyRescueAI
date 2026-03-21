@@ -47,6 +47,11 @@ export const apiClient = {
                     const resp = await apiFetch('/commands/thermal_scan', { method: 'POST', body: JSON.stringify(payload) });
                     return { status: resp.ok ? 'ok' : 'error', content: [{ text: JSON.stringify(resp.json || {}) }] };
                 }
+                case 'recall_drone': {
+                    const payload = { drone_id: args.id || args.drone_id };
+                    const resp = await apiFetch('/commands/recall', { method: 'POST', body: JSON.stringify(payload) });
+                    return { status: resp.ok ? 'ok' : 'error', content: [{ text: JSON.stringify(resp.json || {}) }] };
+                }
                 case 'get_all_drones': {
                     const resp = await apiFetch('/drones');
                     return { status: resp.ok ? 'ok' : 'error', content: [{ text: JSON.stringify(resp.json || {}) }] };

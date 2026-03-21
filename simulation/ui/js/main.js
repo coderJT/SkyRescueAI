@@ -329,8 +329,19 @@ let initReady = false;
     };
 
     // Manual RTB — force a drone back to the charging station immediately
-    window.recallDrone = function () {
-        showAlertDialog('Recall disabled — managed by backend');
+    window.recallDrone = async function (droneIdx) {
+        const name = DRONE_NAMES[droneIdx] || `drone_${droneIdx + 1}`;
+        const drone = drones[droneIdx];
+        try {
+            await apiClient.callTool('recall_drone', { drone_id: name });
+            if (drone && !drone.dead) {
+                drone.status = 'moving';
+                drone.target = { sector: '__RECALL__', x: BASE.x, z: BASE.z };
+            }
+            addThought(droneIdx, 'info', '🔋 Forced recall acknowledged — returning to base now.');
+        } catch (e) {
+            addThought(droneIdx, 'warning', `Recall failed: ${e.message || e}`);
+        }
     };
 
     // Add drone disabled in UI; backend controls fleet.
@@ -484,8 +495,13 @@ let initReady = false;
                             d.group.position.copy(d.targetPos);
                             if (!d.arrivalNotified && d.target && d.target.sector) {
                                 d.arrivalNotified = true;
-                                d.status = 'idle';
-                                notifyArrival(i, d.target.sector);
+                                if (d.target.sector === '__RECALL__') {
+                                    // Recall arrival is not a thermal scan action.
+                                    d.status = 'moving';
+                                } else {
+                                    d.status = 'idle';
+                                    notifyArrival(i, d.target.sector);
+                                }
                             }
                         } else {
                             dir.normalize().multiplyScalar(step);
@@ -808,6 +824,7 @@ let initReady = false;
                         d.initialized = true;
                     }
                     const sector = sDrone.target_sector && (world.sectors || {})[sDrone.target_sector];
+                    const isRecall = sDrone.target_sector === '__RECALL__';
                     const serverScanning = sDrone.status === 'scanning';
                     if (serverScanning || isScanning(d)) {
                         // Respect scanning state: only update pose/battery; keep target/targetPos intact
@@ -816,6 +833,15 @@ let initReady = false;
                         if (sDrone.battery != null) d.battery = sDrone.battery;
                         d.status = 'scanning';
                         d.scanning_pending = true;
+                    } else if (isRecall) {
+                        if (!d.targetPos) d.targetPos = d.group.position.clone();
+                        d.targetPos.set(BASE.x, DRONE_FLY_HEIGHT, BASE.z);
+                        d.target = { sector: '__RECALL__', x: BASE.x, z: BASE.z };
+                        d.state = 'moving';
+                        d.status = 'moving';
+                        if (sDrone.battery != null) d.battery = sDrone.battery;
+                        d.scanning_pending = false;
+                        d.arrivalNotified = false;
                     } else if (sector && sector.center) {
                         const [cx, cz] = sector.center;
                         if (!d.targetPos) d.targetPos = d.group.position.clone();

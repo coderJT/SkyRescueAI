@@ -41,6 +41,7 @@ class SimulationEngine:
 
         self.drones = {}
         self.drone_last_sector = {}
+        self.drone_last_charge_ts = {}
 
         self.grid_size = settings.grid_size
         self.sector_cols = settings.sector_cols
@@ -310,27 +311,28 @@ class SimulationEngine:
         dx, dy, dz = dest_x - ox, dest_y - oy, dest_z - oz
         dist = math.sqrt(dx * dx + dy * dy + dz * dz)
         if dist < 1e-6:
-            return
-
-        max_step = settings.autopilot_speed * dt
-        if dist <= max_step:
-            nx, ny, nz = dest_x, dest_y, dest_z
+            # Already at destination: run arrival flow immediately to avoid stale MOVING targets.
             arrived = True
+            nx, ny, nz = ox, oy, oz
         else:
-            scale = max_step / dist
-            nx = ox + dx * scale
-            ny = oy + dy * scale
-            nz = oz + dz * scale
-            arrived = False
+            max_step = settings.autopilot_speed * dt
+            if dist <= max_step:
+                nx, ny, nz = dest_x, dest_y, dest_z
+                arrived = True
+            else:
+                scale = max_step / dist
+                nx = ox + dx * scale
+                ny = oy + dy * scale
+                nz = oz + dz * scale
+                arrived = False
 
-        # Drain battery for this move
-        hazard_mult = self._battery_multiplier_at(ox, oz)
-        wind_mult = hazard_system.wind_multiplier((ox, oy, oz), (nx, ny, nz), self.wind)
-        cost = drone_system.move_drain((ox, oy, oz), (nx, ny, nz), settings, hazard_mult * wind_mult)
-
-        # Move and drain
-        drone.move_to(nx, ny, nz)
-        drone.drain_battery(cost)
+        # Move and drain only when there is actual translation.
+        if (nx, ny, nz) != (ox, oy, oz):
+            hazard_mult = self._battery_multiplier_at(ox, oz)
+            wind_mult = hazard_system.wind_multiplier((ox, oy, oz), (nx, ny, nz), self.wind)
+            cost = drone_system.move_drain((ox, oy, oz), (nx, ny, nz), settings, hazard_mult * wind_mult)
+            drone.move_to(nx, ny, nz)
+            drone.drain_battery(cost)
 
         # Auto scan along path
         last_sid = self.drone_last_sector.get(drone.id)
@@ -352,7 +354,7 @@ class SimulationEngine:
                         s["assigned_to"] = None
                 drone.move_to(*drone.base_coordinates)
                 drone.set_status("charging")
-                drone.charge()
+                self.drone_last_charge_ts[drone.id] = time.time()
                 drone.target_sector = None
                 drone.current_reason = None
                 log_event(f"{drone.id} returned to base for charging.", drone_id=drone.id, mission_log=self.mission_log)
@@ -360,9 +362,14 @@ class SimulationEngine:
                 drone.target_sector = None
                 drone.current_reason = None
                 log_event(f"🛰️ ARRIVED {drone.id} sector={current_sid}", drone_id=drone.id, mission_log=self.mission_log)
+                # Important
                 try:
-                    # drone.set_status("scanning")
-                    self.thermal_scan(drone.id, current_sid)
+                    if current_sid and self.sectors.get(current_sid, {}).get("thermal_scanned"):
+                        # Already thermally scanned; move on immediately.
+                        drone.set_status("idle")
+                        self._swarm_on_arrival(drone, current_sid)
+                    else:
+                        self.thermal_scan(drone.id, current_sid)
                 except Exception:
                     drone.set_status("idle")
         else:
@@ -389,11 +396,19 @@ class SimulationEngine:
                 "center": (cx, 5, cz),
                 "ts": time.time(),
             }
+            
             # keep recent only
             self.hazard_redirects.append(evt)
             # prune older than 5 seconds or keep last 50
             now = time.time()
             self.hazard_redirects = [e for e in self.hazard_redirects if now - e.get("ts", now) <= 5][-50:]
+
+            log_event(
+                        "HAZARD REDIRECT sector=%s reason=%s"
+                        % (sector_id, reason or "hazard_redirect"),
+                        drone_id=drone_id,
+                        mission_log=self.mission_log,
+                    )
         except Exception:
             pass
 
@@ -403,9 +418,52 @@ class SimulationEngine:
             return {"error": f"Drone {drone_id} not found"}
 
         drone = self.drones[drone_id]
+        prev_status = drone.status
         drone.battery_remaining = battery
         drone.coordinates = (x, y, z)
         drone.status = status
+
+        # UI drives movement, so complete recall->charging transition here once drone reaches base.
+        bx, _, bz = drone.base_coordinates
+        at_base = math.hypot(x - bx, z - bz) <= max(1.5, settings.sector_scan_radius * 0.25)
+        if drone.target_sector == "__RECALL__" and at_base:
+            for s in self.sectors.values():
+                if s.get("assigned_to") == drone_id:
+                    s["assigned_to"] = None
+            drone.move_to(*drone.base_coordinates)
+            drone.set_status("charging")
+            self.drone_last_charge_ts[drone_id] = time.time()
+            drone.target_sector = None
+            drone.current_reason = None
+            if prev_status != "charging":
+                log_event(f"{drone_id} reached base and started charging.", drone_id=drone_id, mission_log=self.mission_log)
+            return {"status": "charging", "battery": round(drone.battery_remaining, 1)}
+
+        # While recalling, do not allow telemetry/scanning flow to retarget away from base.
+        if drone.target_sector == "__RECALL__" and not at_base:
+            drone.set_status("moving")
+            drone.scanning_pending = False
+            return {"status": "recall_in_progress", "target": "__RECALL__", "battery": round(drone.battery_remaining, 1)}
+
+        # Keep charging state sticky at base and avoid passive scan side effects there.
+        if prev_status == "charging" and at_base:
+            now = time.time()
+            last_ts = self.drone_last_charge_ts.get(drone_id, now)
+            dt = max(0.0, now - last_ts)
+            if dt > 0:
+                drone.charge(dt * settings.recharge_rate_per_sec)
+            self.drone_last_charge_ts[drone_id] = now
+            drone.move_to(*drone.base_coordinates)
+            drone.target_sector = None
+            if drone.battery_remaining >= 100.0:
+                drone.set_status("idle")
+                self.drone_last_charge_ts.pop(drone_id, None)
+                return {"status": "idle", "battery": round(drone.battery_remaining, 1)}
+            drone.set_status("charging")
+            return {"status": "charging", "battery": round(drone.battery_remaining, 1)}
+
+        if prev_status == "charging" and not at_base:
+            self.drone_last_charge_ts.pop(drone_id, None)
 
         # Passive hazard discovery + fly-over scans (coarse telemetry safe)
         try:
@@ -508,7 +566,11 @@ class SimulationEngine:
                                 mission_log=self.mission_log,
                             )
                         continue
-                    if isinstance(scan_res, dict) and scan_res.get("hazard_detected") and not hazard_hit:
+                    if (
+                        isinstance(scan_res, dict)
+                        and scan_res.get("hazard_detected")
+                        and not sector.get("assigned_to")
+                    ):
                         hazard_hit = {
                             "sector_id": sid,
                             "center": sector.get("center"),
@@ -626,27 +688,68 @@ class SimulationEngine:
         # if drone.status == "scanning" or getattr(drone, "scanning_pending", False):
         #     return {"error": f"Drone {drone_id} is scanning; target change deferred"}
 
-        # Check sector status
-        if sector_id not in self.sectors:
-            drone.target_sector = None
-            return {"error": f"Sector {sector_id} not found"}
-        
         # Clear upcoming assignment if it exists and not scanned
         if drone.target_sector and drone.target_sector in self.sectors:
             old_s = self.sectors[drone.target_sector]
             if old_s["assigned_to"] == drone_id:
-                if not old_s.get("scanned"):
+                if not old_s.get("thermal_scanned"):
                     old_s["assigned_to"] = None
                     if old_s["status"] == "assigned":
                         old_s["status"] = "unscanned"
         
         # Handle recall command
         if sector_id == "__RECALL__":
+            drone.force_recall_requested = True
+            # Force-release any in-flight assignment owned by this drone.
+            for s in self.sectors.values():
+                if s.get("assigned_to") == drone_id:
+                    s["assigned_to"] = None
+                    s["thermal_scanned"] = False
+                    if s.get("status") == "assigned":
+                        s["status"] = "unscanned"
+            drone.target_sector = "__RECALL__"
+            drone.current_reason = reason or "battery_recall"
+            if drone.status not in ["offline", "charging"]:
+                drone.set_status("moving")
             log_event(f"STATE: {drone_id} target set to __RECALL__", drone_id=drone_id, mission_log=self.mission_log)
             return {"status": "success", "drone_id": drone_id, "target": "__RECALL__"}
 
+        # Check sector status
+        if sector_id not in self.sectors:
+            drone.target_sector = None
+            return {"error": f"Sector {sector_id} not found"}
+        drone.force_recall_requested = False
+
+        # Avoid assigning sectors that are already scanned/completed.
+        target_sector = self.sectors[sector_id]
+        if target_sector.get("thermal_scanned"):
+            # target_sector["assigned_to"] = None
+            # if target_sector.get("status") == "assigned":
+            #     target_sector["status"] = "unscanned"
+            # drone.target_sector = None
+            # drone.current_reason = None
+            return {
+                "error": f"Sector {sector_id} already completed",
+                "status": "skipped",
+                "sector_id": sector_id,
+            }
+
+        # Prevent assignment when another drone already owns this sector.
+        assigned_to = target_sector.get("assigned_to")
+        if assigned_to and assigned_to != drone_id:
+            return {
+                "error": f"Sector {sector_id} already assigned to {assigned_to}",
+                "status": "busy",
+                "sector_id": sector_id,
+                "assigned_to": assigned_to,
+            }
+
+        # Avoid duplicate re-assignment to the same active target.
+        if drone.target_sector == sector_id and target_sector.get("assigned_to") == drone_id:
+            return {"status": "noop", "drone_id": drone_id, "target": sector_id}
+
         # Estimate battery usage for round trip (aligned with move_drain/scan_drain)
-        center = self.sectors[sector_id]["center"]
+        center = target_sector["center"]
         hazard_mult = drone_system.hazard_multiplier_for_sector(
             sector_id,
             fire_multipliers=self.fire_multipliers,
@@ -675,8 +778,8 @@ class SimulationEngine:
             }
 
         # Update sector status
-        self.sectors[sector_id]["assigned_to"] = drone_id
-        self.sectors[sector_id]["status"] = "assigned"
+        target_sector["assigned_to"] = drone_id
+        target_sector["status"] = "assigned"
 
         # Apply target lock to reduce oscillation; shorter lock for smoke
         try:
@@ -847,6 +950,19 @@ class SimulationEngine:
             return {"error": f"Drone {drone_id} not found"}
         drone = self.drones[drone_id]
 
+        if sector_id in self.sectors and self.sectors[sector_id].get("thermal_scanned"):
+            return {"error": f"Sector {sector_id} already thermal scanned"}
+
+        if sector_id in self.sectors and self.sectors[sector_id].get("assigned_to") and self.sectors[sector_id].get("assigned_to") != drone_id:
+            return {"error": f"Sector {sector_id} already assigned to {self.sectors[sector_id].get('assigned_to')}"}
+
+        # Recall preempts thermal scan.
+        if getattr(drone, "force_recall_requested", False) or drone.target_sector == "__RECALL__":
+            drone.scanning_pending = False
+            if drone.status not in ["offline", "charging"]:
+                drone.set_status("moving")
+            return {"status": "interrupted", "reason": "force_recall"}
+
         # Ensure drone is in a state where it can scan
         # if getattr(drone, "scanning_pending", False):
         #     return {"error": f"Drone {drone_id} already has a scan pending"}
@@ -889,6 +1005,18 @@ class SimulationEngine:
         # Simulate 3 seconds scan
         time.sleep(3)
 
+        # Scan can be interrupted by a forced recall during dwell time.
+        if getattr(drone, "force_recall_requested", False) or drone.target_sector == "__RECALL__":
+            drone.scanning_pending = False
+            if drone.status not in ["offline", "charging"]:
+                drone.set_status("moving")
+            return {
+                "status": "interrupted",
+                "reason": "force_recall",
+                "drone": drone_id,
+                "sector": current_sid,
+            }
+
         try:
             log_event(f"thermal_scan start drone={drone_id} sector={current_sid}", drone_id=drone_id, mission_log=self.mission_log)
         except Exception:
@@ -911,6 +1039,7 @@ class SimulationEngine:
         # Mark sector so we don't re-request thermal scans on every assign loop
         if current_sid in self.sectors:
             self.sectors[current_sid]["thermal_scanned"] = True
+            self.sectors[current_sid]["assigned_to"] = drone_id
 
         # Reset status to idle after scan completes (unless battery killed it)
         if drone.status != "offline":
@@ -948,18 +1077,10 @@ class SimulationEngine:
 
         drone = self.drones[drone_id]
 
-        # Release assigned sectors
-        for s in self.sectors.values():
-            if s["assigned_to"] == drone_id:
-                s["assigned_to"] = None
-
-        # Prepare for charging
-        drone.move_to(*drone.base_coordinates)
-        drone.set_status("charging")
-        drone.charge()
-
-        log_event(f"{drone_id} recalled for charging. Battery restored to 100%.", drone_id=drone_id, mission_log=self.mission_log)
-        return drone.to_dict()
+        # Route through target assignment flow instead of teleporting.
+        res = self.set_drone_target(drone_id, "__RECALL__", reason="manual_recall")
+        log_event(f"{drone_id} recall requested.", drone_id=drone_id, mission_log=self.mission_log)
+        return res
 
     def scan_sector(self, drone_id, sector_id, *, auto: bool = False):
         """

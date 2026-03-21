@@ -86,6 +86,16 @@ def cmd_thermal_scan(payload: dict):
     sid = payload.get("sector_id")
     return engine.thermal_scan(did, sid)
 
+@app.post("/commands/recall")
+def cmd_recall(payload: dict):
+    """Force a drone to return to base immediately."""
+    if not payload:
+        return {"error": "missing payload"}
+    did = payload.get("drone_id")
+    if not did:
+        return {"error": "missing drone_id"}
+    return engine.set_drone_target(did, "__RECALL__", "ui_manual_recall")
+
 @app.post("/telemetry")
 def report_telemetry(payload: dict):
     """Receive drone telemetry from UI/controller and forward to engine."""
@@ -105,11 +115,10 @@ def report_telemetry(payload: dict):
         if hazard_hit and hazard_hit.get("sector_id"):
             sid = hazard_hit["sector_id"]
             reason = f"hazard underfoot ({hazard_hit.get('hazard')})"
-            engine.set_drone_target(payload.get("drone_id"), sid, reason)
-            try:
-                engine._record_hazard_redirect(payload.get("drone_id"), sid, reason)
-            except Exception:
-                pass
+            did = payload.get("drone_id")
+            drone = engine.drones.get(did)
+            if getattr(drone, "target_sector", None) != sid:
+                engine.set_drone_target(did, sid, reason)
     except Exception:
         pass
     return res
