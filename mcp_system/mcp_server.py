@@ -247,7 +247,16 @@ def assign_targets(waiting: list[str] = None):
         if did in explicit:
             sector_id = explicit[did]["sector_id"]
             reason = explicit[did].get("reason", "LLM assignment")
-            engine.set_drone_target(did, sector_id, reason)
+            if engine.sectors.get(sector_id, {}).get("scanned"):
+                logger.debug("explicit assignment skipped (scanned) drone=%s sector=%s", did, sector_id)
+                continue
+            res = engine.set_drone_target(did, sector_id, reason)
+            if isinstance(res, dict) and res.get("status") == "recall":
+                assignments.append({"drone_id": did, "sector_id": "__RECALL__", "reason": "battery_recall"})
+                continue
+            if isinstance(res, dict) and res.get("error"):
+                logger.debug("explicit assignment failed drone=%s sector=%s error=%s", did, sector_id, res.get("error"))
+                continue
             _record_target_prio(did, sector_id)
             assignments.append({"drone_id": did, "sector_id": sector_id, "reason": reason})
             try:
@@ -264,7 +273,17 @@ def assign_targets(waiting: list[str] = None):
             # Fallback when swarm returns no action for this drone
             target = swarm_system._patrol_target(idx, len(engine.drones), world)
             sid = engine._get_sector_at(target[0], target[2])
-            engine.set_drone_target(did, sid, "fallback_patrol")
+            res = engine.set_drone_target(did, sid, "fallback_patrol")
+            if isinstance(res, dict) and res.get("status") == "recall":
+                assignments.append({"drone_id": did, "sector_id": "__RECALL__", "reason": "battery_recall"})
+                continue
+            if isinstance(res, dict) and res.get("error"):
+                logger.debug("fallback patrol skipped: drone=%s sector=%s error=%s", did, sid, res.get("error"))
+                try:
+                    _drone_logger(did).info("fallback patrol skipped sector=%s error=%s", sid, res.get("error"))
+                except Exception:
+                    pass
+                continue
             _record_target_prio(did, sid)
             assignments.append({"drone_id": did, "sector_id": sid, "reason": "fallback_patrol"})
             try:
@@ -317,10 +336,27 @@ def assign_targets(waiting: list[str] = None):
         sector_id = act.get("sector") or engine._get_sector_at(tx, tz)
         if not sector_id:
             continue
+        if engine.sectors.get(sector_id, {}).get("scanned"):
+            logger.debug("move assignment skipped (scanned) drone=%s sector=%s", did, sector_id)
+            try:
+                _drone_logger(did).info("assignment_skipped_scanned sector=%s", sector_id)
+            except Exception:
+                pass
+            continue
         reason = act.get("reason", "swarm_step")
 
         # Set drone target (doesn't move the drone)
-        engine.set_drone_target(did, sector_id, reason)
+        res = engine.set_drone_target(did, sector_id, reason)
+        if isinstance(res, dict) and res.get("status") == "recall":
+            assignments.append({"drone_id": did, "sector_id": "__RECALL__", "reason": "battery_recall"})
+            continue
+        if isinstance(res, dict) and res.get("error"):
+            logger.debug("move assignment failed drone=%s sector=%s error=%s", did, sector_id, res.get("error"))
+            try:
+                _drone_logger(did).info("assignment_failed sector=%s error=%s", sector_id, res.get("error"))
+            except Exception:
+                pass
+            continue
         _record_target_prio(did, sector_id)
 
         try:

@@ -671,7 +671,7 @@ class SimulationEngine:
                 "status": "recall",
                 "drone_id": drone_id,
                 "target": "__RECALL__",
-                "error": f"Insufficient battery for {sector_id}: need ~{round_trip_cost:.1f}% but have {drone.battery_remaining:.1f}%",
+                "reason": "battery_recall",
             }
 
         # Update sector status
