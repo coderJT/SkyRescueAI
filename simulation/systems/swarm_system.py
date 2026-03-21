@@ -122,23 +122,41 @@ def _battery_feasible(drone, target: Sector, world: Dict[str, Any], constraints:
     return feasible
 
 
-def _patrol_target(drone_idx: int, total: int, world: Dict[str, Any], anchor: Optional[Tuple[float, float, float]] = None) -> Tuple[float, float, float]:
-    """Spread drones radially; if anchor provided, stay near that anchor."""
+def _patrol_target(
+    drone_idx: int,
+    total: int,
+    world: Dict[str, Any],
+    anchor: Optional[Tuple[float, float, float]] = None,
+    avoid_sid: Optional[str] = None,
+) -> Tuple[float, float, float]:
+    """Spread drones radially; if anchor provided, stay near that anchor. Skip already scanned sectors."""
     grid = int(world.get("grid_size", 200))
-    if anchor:
-        ax, _, az = anchor
-        jitter = grid * 0.05
-        x = max(0, min(grid, ax + random.uniform(-jitter, jitter)))
-        z = max(0, min(grid, az + random.uniform(-jitter, jitter)))
-        return (x, 5, z)
-
-    angle = (2 * math.pi * drone_idx / max(total, 1)) + random.uniform(-0.3, 0.3)
-    center_x = grid / 2
-    center_z = grid / 2
-    radius = grid * 0.45 + random.uniform(-grid * 0.05, grid * 0.05)
-    x = max(0, min(grid, center_x + radius * math.cos(angle)))
-    z = max(0, min(grid, center_z + radius * math.sin(angle)))
-    return (x, 5, z)
+    sectors = world.get("sectors", {})
+    attempts = 0
+    last = (0.0, 5.0, 0.0)
+    while attempts < 6:
+        if anchor:
+            ax, _, az = anchor
+            jitter = grid * 0.05
+            x = max(0, min(grid, ax + random.uniform(-jitter, jitter)))
+            z = max(0, min(grid, az + random.uniform(-jitter, jitter)))
+        else:
+            angle = (2 * math.pi * drone_idx / max(total, 1)) + random.uniform(-0.3, 0.3)
+            center_x = grid / 2
+            center_z = grid / 2
+            radius = grid * 0.45 + random.uniform(-grid * 0.05, grid * 0.05)
+            x = max(0, min(grid, center_x + radius * math.cos(angle)))
+            z = max(0, min(grid, center_z + radius * math.sin(angle)))
+        last = (x, 5, z)
+        sid, _ = _sector_at(world, x, z)
+        if avoid_sid and sid == avoid_sid:
+            attempts += 1
+            continue
+        if sid and sectors.get(sid, {}).get("scanned"):
+            attempts += 1
+            continue
+        return last
+    return last
 
 
 def _sector_neighbors(world: Dict[str, Any], sid: str, radius: int) -> List[Tuple[str, int]]:
