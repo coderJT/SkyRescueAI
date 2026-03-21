@@ -10,9 +10,13 @@ export function buildScene(state) {
     scene.fog = new THREE.FogExp2(0x060810, 0.003);
 
     // Set up renderer
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    // Favor battery/thermals over fidelity: drop AA, request low-power GPU, clamp pixel ratio.
+    const renderer = new THREE.WebGLRenderer({
+        antialias: false,
+        powerPreference: "low-power",
+    });
     renderer.setSize(innerWidth, innerHeight);
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.1));
     renderer.shadowMap.enabled = false;
     document.body.appendChild(renderer.domElement);
 
