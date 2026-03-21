@@ -490,7 +490,7 @@ let initReady = false;
                         } else {
                             dir.normalize().multiplyScalar(step);
                             d.group.position.add(dir);
-                            d.status = 'moving';
+                            // d.status = 'moving';
                         }
                         // Battery drain on movement (UI-side)
                         if (DRAIN_PER_UNIT != null) {
