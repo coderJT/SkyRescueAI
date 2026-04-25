@@ -114,7 +114,9 @@ def _battery_feasible(drone, target: Sector, world: Dict[str, Any], constraints:
     to_base = math.hypot(hx - bx, hz - bz)
     hazard = target.get("hazard") or target.get("true_hazard")
     mult = _hazard_mult(hazard)
-    move_cost = (to_target + to_base) * settings.drain_per_unit * mult
+    # Use hazard_mult with a small buffer for path-crossing hazard sectors and wind
+    path_mult = max(mult, 1.0) * 1.2
+    move_cost = (to_target + to_base) * settings.drain_per_unit * path_mult
     scan_cost = settings.scan_cost * mult
     reserve = constraints.get("battery_recall_threshold") or settings.safety_margin
     needed = move_cost + scan_cost + reserve
@@ -159,6 +161,14 @@ def _patrol_target(
             attempts += 1
             continue
         return last
+    # Fallback: pick the nearest unscanned, unassigned sector
+    unscanned = [(sid, s) for sid, s in sectors.items()
+                 if not s.get("thermal_scanned") and not s.get("assigned_to") and sid != avoid_sid]
+    if unscanned:
+        # Spread across unscanned sectors by drone index
+        pick = unscanned[drone_idx % len(unscanned)]
+        cx, cz = pick[1].get("center", (grid / 2, grid / 2))
+        return (cx, 5, cz)
     return last
 
 
@@ -448,6 +458,18 @@ def swarm_step(drones: List[Any], world: Dict[str, Any], plan: Dict[str, Any] | 
         # 5) Patrol/discover spread when no hazard targets
         anchor = patrol_anchor if (plan_mode == "coverage" and patrol_anchor and not hazards) else None
         target = _patrol_target(idx, len(drones), world, anchor)
+        # Verify battery feasibility for patrol target; if not, pick nearest feasible unscanned sector
+        sid, sector = _sector_at(world, target[0], target[2])
+        if sector and not _battery_feasible(drone, sector, world, constraints):
+            unscanned = [(sid, s) for sid, s in (world.get("sectors") or {}).items()
+                         if not s.get("thermal_scanned") and not s.get("assigned_to") and _battery_feasible(drone, s, world, constraints)]
+            if unscanned:
+                unscanned.sort(key=lambda kv: _dist2d((kv[1]["center"][0], 0, kv[1]["center"][1]), drone.coordinates))
+                target = (unscanned[0][1]["center"][0], 5, unscanned[0][1]["center"][1])
+            else:
+                # No reachable sectors — recall to base
+                actions.append({"action": "return", "target": (settings.base_x, 5, settings.base_z), "reason": "No reachable sectors"})
+                continue
         actions.append({"action": "move", "target": target, "reason": "Patrol spread"})
         logger.info(
             "assignment move patrol: drone=%s target=%s anchor=%s plan_mode=%s",
@@ -476,9 +498,13 @@ def swarm_step(drones: List[Any], world: Dict[str, Any], plan: Dict[str, Any] | 
     # Defensive: guarantee one action per drone (fallback patrol) so callers never receive an empty list.
     if len(actions) < len(drones):
         for idx in range(len(actions), len(drones)):
-            actions.append({
-                "action": "move",
-                "target": _patrol_target(idx, len(drones), world),
+            drone_obj = drones[idx] if idx < len(drones) else None
+            if drone_obj and drone_obj.battery_remaining <= reserve:
+                actions.append({"action": "return", "target": (settings.base_x, 5, settings.base_z), "reason": "Low battery fallback"})
+            else:
+                actions.append({
+                    "action": "move",
+                    "target": _patrol_target(idx, len(drones), world),
                 "reason": "Patrol spread (fallback)",
             })
 

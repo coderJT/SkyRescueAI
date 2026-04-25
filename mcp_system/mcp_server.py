@@ -347,12 +347,21 @@ def assign_targets(waiting: list[str] = None):
             continue
         sector_meta = engine.sectors.get(sector_id, {})
         if sector_meta.get("thermal_scanned"):
-            logger.debug("move assignment skipped (scanned) drone=%s sector=%s", did, sector_id)
-            try:
-                _drone_logger(did).info("assignment_skipped_scanned sector=%s", sector_id)
-            except Exception:
-                pass
-            continue
+            # Sector already scanned — fall back to nearest unscanned sector
+            unscanned = [(sid, s) for sid, s in engine.sectors.items()
+                         if not s.get("thermal_scanned") and not s.get("assigned_to")]
+            if unscanned:
+                drone_obj = engine.drones.get(did)
+                if drone_obj:
+                    unscanned.sort(key=lambda kv: math.hypot(kv[1]["center"][0] - drone_obj.coordinates[0],
+                                                              kv[1]["center"][1] - drone_obj.coordinates[2]))
+                    sector_id = unscanned[0][0]
+                    sector_meta = engine.sectors.get(sector_id, {})
+                else:
+                    continue
+            else:
+                logger.debug("move assignment skipped (all scanned) drone=%s", did)
+                continue
         if sector_meta.get("assigned_to") and sector_meta.get("assigned_to") != did:
             logger.debug("move assignment skipped (already_assigned) drone=%s sector=%s owner=%s", did, sector_id, sector_meta.get("assigned_to"))
             continue

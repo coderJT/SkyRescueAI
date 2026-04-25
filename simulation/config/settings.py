@@ -16,10 +16,10 @@ class Settings:
     survivor_max: int = 10
 
     # Drone energy model
-    drain_per_unit: float = 0.12   # lowered to reduce move drain
-    scan_cost: float = 0.7         # slightly cheaper scans
-    safety_margin: float = 6.0     # allow deeper excursions before recall
-    recharge_rate_per_sec: float = 12.0  # recharge speed while docked at base
+    drain_per_unit: float = 0.08   # lowered to reduce move drain
+    scan_cost: float = 0.5         # slightly cheaper scans
+    safety_margin: float = 10.0    # buffer for return trip + hazard multipliers
+    recharge_rate_per_sec: float = 15.0  # recharge speed while docked at base
     smoke_multiplier: float = 1.4
     sector_scan_radius: float = 30.0   # ~3x3 footprint (cell width ~20)
     thermal_scan_radius: float = 12.0  # ~1x1 footprint

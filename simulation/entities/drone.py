@@ -40,7 +40,12 @@ class Drone:
             self.status = "active"
 
     def set_status(self, status: str):
+        import logging
+        _logger = logging.getLogger("drone_status")
+        old = self.status
         self.status = status
+        if old != status:
+            _logger.debug("%s status: %s -> %s (target=%s battery=%.1f)", self.id, old, status, self.target_sector, self.battery_remaining)
 
     def to_dict(self):
         return {

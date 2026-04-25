@@ -2,7 +2,6 @@
 
 from simulation.systems.simulation_engine import SimulationEngine
 
-# Single, shared engine
 engine = SimulationEngine()
 
 __all__ = ["engine"]

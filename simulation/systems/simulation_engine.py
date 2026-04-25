@@ -42,6 +42,7 @@ class SimulationEngine:
         self.drones = {}
         self.drone_last_sector = {}
         self.drone_last_charge_ts = {}
+        self.drone_last_telemetry_ts = {}
 
         self.grid_size = settings.grid_size
         self.sector_cols = settings.sector_cols
@@ -367,8 +368,10 @@ class SimulationEngine:
                     if current_sid and self.sectors.get(current_sid, {}).get("thermal_scanned"):
                         # Already thermally scanned; move on immediately.
                         drone.set_status("idle")
+                        log_event(f"ARRIVED {drone.id} sector={current_sid} already scanned -> idle + swarm", drone_id=drone.id, mission_log=self.mission_log)
                         self._swarm_on_arrival(drone, current_sid)
                     else:
+                        log_event(f"ARRIVED {drone.id} sector={current_sid} -> thermal_scan", drone_id=drone.id, mission_log=self.mission_log)
                         self.thermal_scan(drone.id, current_sid)
                 except Exception:
                     drone.set_status("idle")
@@ -422,6 +425,7 @@ class SimulationEngine:
         drone.battery_remaining = battery
         drone.coordinates = (x, y, z)
         drone.status = status
+        self.drone_last_telemetry_ts[drone_id] = time.time()
 
         # UI drives movement, so complete recall->charging transition here once drone reaches base.
         bx, _, bz = drone.base_coordinates
@@ -758,7 +762,9 @@ class SimulationEngine:
         )
         to_target = math.hypot(center[0] - drone.coordinates[0], center[1] - drone.coordinates[2])
         to_base = math.hypot(center[0] - settings.base_x, center[1] - settings.base_z)
-        move_cost = (to_target + to_base) * settings.drain_per_unit
+        # Use hazard_mult with a small buffer for path-crossing hazard sectors and wind
+        path_mult = max(hazard_mult, 1.0) * 1.2
+        move_cost = (to_target + to_base) * settings.drain_per_unit * path_mult
         scan_cost = drone_system.scan_drain(settings, hazard_mult)
         round_trip_cost = move_cost + scan_cost + settings.safety_margin
         if drone.battery_remaining < round_trip_cost:
@@ -793,6 +799,8 @@ class SimulationEngine:
         # Update drone's target sector and reason
         drone.target_sector = sector_id
         drone.current_reason = reason
+        if drone.status not in ("offline", "charging", "scanning"):
+            drone.set_status("moving")
 
         try:
             if reason and "hazard" in reason.lower():
@@ -818,11 +826,21 @@ class SimulationEngine:
                 self.survivors = survivor_system.generate_survivors(self)
             hazard_system.update_wind(self)
             now = time.time()
-            
-            # Server-side autopilot disabled (UI drives movement). Keep clock in sync.
+
+            # Server-side autopilot: advance drones whose UI telemetry has gone stale
+            # (handles UI disconnect, client bugs, or drones stuck at "moving" with no progress)
+            dt = now - getattr(self, 'last_move_time', now)
+            STALE_THRESHOLD = 3.0  # seconds without telemetry before server takes over
+            if not self.paused and dt > 0 and self.mission_status == "active":
+                for drone in self.drones.values():
+                    last_tel = self.drone_last_telemetry_ts.get(drone.id, 0)
+                    stale = (now - last_tel) > STALE_THRESHOLD
+                    # Fix: idle drones with a target that aren't moving should be auto-stepped too
+                    if drone.target_sector and drone.status in ("moving", "idle") and stale:
+                        self._auto_step_drone(drone, dt)
             self.last_move_time = now
             
-            # Reduce drone battery in idle mode
+            # Reduce drone battery in idle mode, and charge drones at base
             if self.paused:
                 self.last_drain_time = now
                 delta = 0
@@ -830,6 +848,31 @@ class SimulationEngine:
                 delta = now - getattr(self, 'last_drain_time', now)
             if delta > 0.5:
                 drone_system.idle_drain(self.drones, delta)
+                # Charge drones that are at base with charging status
+                for did, drone in self.drones.items():
+                    if drone.status == "charging":
+                        last_ts = self.drone_last_charge_ts.get(did, now)
+                        charge_dt = max(0.0, now - last_ts)
+                        if charge_dt > 0:
+                            drone.charge(charge_dt * settings.recharge_rate_per_sec)
+                        self.drone_last_charge_ts[did] = now
+                        if drone.battery_remaining >= 100.0:
+                            drone.set_status("idle")
+                            drone.target_sector = None
+                            drone.current_reason = None
+                            self.drone_last_charge_ts.pop(did, None)
+                            log_event(f"{did} fully charged, ready for assignment.", drone_id=did, mission_log=self.mission_log)
+                    # Clear stale __RECALL__ target for fully charged idle drones at base
+                    if (drone.target_sector == "__RECALL__"
+                        and drone.status in ("idle", "active", "moving", "charging")
+                        and drone.battery_remaining >= 95.0):
+                        bx, _, bz = drone.base_coordinates
+                        at_base = math.hypot(drone.coordinates[0] - bx, drone.coordinates[2] - bz) < 15
+                        if at_base:
+                            drone.target_sector = None
+                            drone.current_reason = None
+                            if drone.status == "charging" and drone.battery_remaining >= 100.0:
+                                drone.set_status("idle")
                 self.last_drain_time = now
             
             # Update environment statistics
@@ -1044,12 +1087,15 @@ class SimulationEngine:
         # Reset status to idle after scan completes (unless battery killed it)
         if drone.status != "offline":
             drone.set_status("idle")
+            log_event(f"SCAN_DONE {drone_id} sector={current_sid} -> idle, triggering swarm_on_arrival", drone_id=drone_id, mission_log=self.mission_log)
             try:
                 # Trigger swarm to pick next action after scan completes
                 self._swarm_on_arrival(drone, current_sid)
             except Exception:
                 pass
         drone.scanning_pending = False
+        if drone.target_sector:
+            log_event(f"POST_SCAN {drone_id} new_target={drone.target_sector} status={drone.status}", drone_id=drone_id, mission_log=self.mission_log)
 
         # Report new survivor found
         for s in detected:

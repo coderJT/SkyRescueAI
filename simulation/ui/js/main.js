@@ -253,6 +253,8 @@ let initReady = false;
             if (drone) {
                 drone.status = 'idle';
                 drone.scanning_pending = false;
+                drone.target = null;
+                drone.arrivalNotified = false;
             }
         }
     }
@@ -499,7 +501,7 @@ let initReady = false;
                                     // Recall arrival is not a thermal scan action.
                                     d.status = 'moving';
                                 } else {
-                                    d.status = 'idle';
+                                    // Don't set idle here — notifyArrival sets scanning, then idle after done
                                     notifyArrival(i, d.target.sector);
                                 }
                             }
@@ -826,8 +828,44 @@ let initReady = false;
                     const sector = sDrone.target_sector && (world.sectors || {})[sDrone.target_sector];
                     const isRecall = sDrone.target_sector === '__RECALL__';
                     const serverScanning = sDrone.status === 'scanning';
-                    if (serverScanning || isScanning(d)) {
-                        // Respect scanning state: only update pose/battery; keep target/targetPos intact
+                    const localScanning = isScanning(d);
+                    // Debug: log sync state mismatch
+                    if (sDrone.target_sector !== (d.target ? d.target.sector : null) || serverScanning !== localScanning) {
+                        console.log(`[sync] ${did}: server(status=${sDrone.status} target=${sDrone.target_sector}) vs local(status=${d.status} target=${d.target?d.target.sector:null} scanning=${localScanning})`);
+                    }
+                    // If server says scanning but UI isn't, trust the server (scan initiated by autopilot)
+                    // If UI is scanning but server moved on (idle/moving), clear local scan and accept new target
+                    if (serverScanning && !isScanning(d)) {
+                        // Server started a scan (e.g. via autopilot) — reflect it locally
+                        d.group.position.set(x, DRONE_FLY_HEIGHT, z);
+                        d.targetPos = d.targetPos || d.group.position.clone();
+                        if (sDrone.battery != null) d.battery = sDrone.battery;
+                        d.status = 'scanning';
+                        d.scanning_pending = true;
+                    } else if (isScanning(d) && !serverScanning) {
+                        // UI thinks scanning but server moved on — clear local scan, accept server state
+                        d.scanning_pending = false;
+                        if (isRecall) {
+                            if (!d.targetPos) d.targetPos = d.group.position.clone();
+                            d.targetPos.set(BASE.x, DRONE_FLY_HEIGHT, BASE.z);
+                            d.target = { sector: '__RECALL__', x: BASE.x, z: BASE.z };
+                            d.status = 'moving';
+                            d.arrivalNotified = false;
+                        } else if (sector && sector.center) {
+                            const [cx, cz] = sector.center;
+                            if (!d.targetPos) d.targetPos = d.group.position.clone();
+                            d.targetPos.set(cx, DRONE_FLY_HEIGHT, cz);
+                            d.target = { sector: sDrone.target_sector, x: cx, z: cz };
+                            d.status = 'moving';
+                            d.arrivalNotified = false;
+                        } else {
+                            d.status = sDrone.status || 'idle';
+                            d.target = null;
+                            d.arrivalNotified = false;
+                        }
+                        if (sDrone.battery != null) d.battery = sDrone.battery;
+                    } else if (serverScanning && isScanning(d)) {
+                        // Both agree on scanning — just update position/battery
                         d.group.position.set(x, DRONE_FLY_HEIGHT, z);
                         d.targetPos = d.targetPos || d.group.position.clone();
                         if (sDrone.battery != null) d.battery = sDrone.battery;
@@ -848,7 +886,7 @@ let initReady = false;
                         d.targetPos.set(cx, DRONE_FLY_HEIGHT, cz);
                         d.target = { sector: sDrone.target_sector, x: cx, z: cz };
                         d.state = 'moving';
-                        d.status = isScanning(d) ? 'scanning' : 'moving';
+                        d.status = 'moving';
                         if (sDrone.battery != null) d.battery = sDrone.battery;
                         d.scanning_pending = false;
                         d.arrivalNotified = false;
@@ -858,7 +896,7 @@ let initReady = false;
                         d.targetPos = d.group.position.clone();
                         d.target = null;
                         d.state = sDrone.status || 'idle';
-                        d.status = isScanning(d) ? 'scanning' : (sDrone.status || d.status || "idle");
+                        d.status = sDrone.status || 'idle';
                         if (sDrone.battery != null) d.battery = sDrone.battery;
                         d.scanning_pending = false;
                         d.arrivalNotified = false;

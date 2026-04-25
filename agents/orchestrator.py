@@ -1,5 +1,5 @@
 """
-Orchestrator: pull world via MCP, optionally call Groq, send plan to MCP, loop.
+Orchestrator: pull world via MCP, optionally call Anthropic (Claude), send plan to MCP, loop.
 """
 
 from __future__ import annotations
@@ -71,17 +71,21 @@ def pull_world() -> Dict[str, Any]:
     return world
 
 
-# 2) LLM invoker (Groq) with prompt built inline
-def _groq_client():
-    """Create Groq client if API key is present; else None."""
-    api_key = os.getenv("GROQ_API_KEY")
+# 2) LLM invoker (Anthropic) with prompt built inline
+def _anthropic_client():
+    """Create Anthropic client if API key is present; else None."""
+    api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
+        logger.info("ANTHROPIC_API_KEY not set — LLM disabled")
         return None
     try:
-        import groq
-        return groq.Groq(api_key=api_key)
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key, base_url="https://api.ilmu.ai/anthropic")
+        model = os.getenv("ANTHROPIC_MODEL", "ilmu-glm-5.1")
+        logger.info("Anthropic client created (model=%s)", model)
+        return client
     except Exception as exc:
-        logger.warning("Groq client unavailable: %s", exc)
+        logger.warning("Anthropic client unavailable: %s", exc)
         return None
 
 
@@ -115,22 +119,22 @@ Guidance:
 
 
 def invoke_llm(world: Dict[str, Any], client, prompt: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    """Call Groq with the built prompt; returns raw JSON dict or None."""
+    """Call Anthropic with the built prompt; returns raw JSON dict or None."""
     if not client:
+        logger.info("invoke_llm: no client, skipping")
         return None
     prompt = prompt or build_prompt(world)
     try:
-        model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
-        resp = client.chat.completions.create(
+        model = os.getenv("ANTHROPIC_MODEL", "ilmu-glm-5.1")
+        logger.info("invoke_llm: calling model=%s", model)
+        resp = client.messages.create(
             model=model,
+            max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=600,
         )
-        content = (resp.choices[0].message.content or "").strip()
-        logger.debug("Groq raw: %s", content)
+        content = (resp.content[0].text or "").strip()
+        logger.info("Anthropic raw response (%d chars): %s", len(content), content[:500])
         if content.startswith("```"):
-            # Strip markdown fences like ```json ... ```
             content = content.strip("`")
             if content.startswith("json"):
                 content = content[4:]
@@ -138,8 +142,11 @@ def invoke_llm(world: Dict[str, Any], client, prompt: Optional[str] = None) -> O
             if content.endswith("```"):
                 content = content[:-3].strip()
         return json.loads(content)
+    except json.JSONDecodeError as exc:
+        logger.warning("Anthropic response not valid JSON: %s | raw: %s", exc, content[:200] if 'content' in dir() else 'N/A')
+        return None
     except Exception as exc:
-        logger.warning("Groq call failed: %s", exc)
+        logger.warning("Anthropic call failed: %s", exc)
         return None
 
 
@@ -174,10 +181,12 @@ def _waiting_drones(world: Dict[str, Any]) -> list[str]:
     for did, d in drones.items():
         status = (d or {}).get("status")
         target = (d or {}).get("target_sector")
-        if target:
+        if target and target != "__RECALL__":
             continue  # already has a destination
         if status in {"scanning", "recharging", "offline", "dead"}:
             continue
+        if target == "__RECALL__" and status not in ("moving", "idle"):
+            continue  # still returning to base
         waiting.append(did)
     return waiting
 
@@ -231,7 +240,7 @@ def detect_crucial_change(world: Dict[str, Any], prev: Dict[str, Any]):
 # 5) Orchestrator loop
 def orchestrate(loop: bool = True, interval: float = DEFAULT_INTERVAL, max_steps: int | None = None) -> Dict[str, Any]:
     """Main loop: pull world, detect change, invoke LLM, push plan, sleep."""
-    client = _groq_client()
+    client = _anthropic_client()
     wait_for_active = os.getenv("ORCHESTRATOR_WAIT_FOR_ACTIVE", "true").lower() not in ("0", "false", "no")
     # track last time we successfully invoked the LLM to enforce MIN_LLM_INTERVAL
     last_llm_ts = 0.0
@@ -297,17 +306,20 @@ def orchestrate(loop: bool = True, interval: float = DEFAULT_INTERVAL, max_steps
         llm_window_ok = (now - last_llm_ts) >= MIN_LLM_INTERVAL
 
         if crucial_change and llm_window_ok:
+            logger.info("Crucial change detected — calling LLM (client=%s)", bool(client))
             parsed = parse_llm_result(invoke_llm(world, client, prompt_text))
             if parsed:
                 plan = parsed
-                plan["llm_model"] = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+                plan["llm_model"] = os.getenv("ANTHROPIC_MODEL", "ilmu-glm-5.1")
                 llm_used = True
                 llm_reason = "llm_called"
                 last_llm_ts = now
             else:
                 llm_reason = "llm_unavailable_or_invalid"
+                logger.warning("LLM call returned no valid result (client=%s)", bool(client))
         elif crucial_change and not llm_window_ok:
             llm_reason = f"rate_limited_{MIN_LLM_INTERVAL}s"
+            logger.debug("Crucial change but rate-limited (%.1fs since last call)", now - last_llm_ts)
         else:
             llm_reason = "no_crucial_change"
 
@@ -318,7 +330,7 @@ def orchestrate(loop: bool = True, interval: float = DEFAULT_INTERVAL, max_steps
                 "priorities": ["hazards"],
                 "constraints": {},
                 "llm_used": False,
-                "llm_reason": ("mission_status=waiting" if status != "active" else "GROQ_API_KEY missing") if not client else llm_reason,
+                "llm_reason": ("mission_status=waiting" if status != "active" else "ANTHROPIC_API_KEY missing") if not client else llm_reason,
             }
         plan["llm_used"] = llm_used
         plan["llm_reason"] = llm_reason if llm_used else plan.get("llm_reason", llm_reason)
