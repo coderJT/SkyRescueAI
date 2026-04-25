@@ -7,7 +7,7 @@ Autonomous multi‑drone search‑and‑rescue simulator with a shared Python co
 - **Simulation Engine** (`simulation/systems/simulation_engine.py`): Source of truth for sectors, hazards, survivors, drones; enforces battery drain, scan/thermal state, and mission metrics.
 - **API Bridge** (`simulation/api/server.py`): FastAPI HTTP/WS surface to expose engine state/commands to the browser UI and external controllers.
 - **MCP Server** (`mcp_system/mcp_server.py`): Exposes the engine as MCP tools; handles hazard redirects and assignment dispatch.
-- **Swarm / Orchestrator** (`simulation/systems/swarm_system.py`, `agents/orchestrator.py`): Scores hazards, enforces battery feasibility and duplicate suppression; orchestrator triggers plans (LLM via Groq when available, heuristic fallback otherwise).
+- **Swarm / Orchestrator** (`simulation/systems/swarm_system.py`, `agents/orchestrator.py`): Scores hazards, enforces battery feasibility and duplicate suppression; orchestrator triggers plans (LLM via ILMU when available, heuristic fallback otherwise).
 - **UI / 3D Client** (`simulation/ui/`): Three.js visualizer, HUD, minimap; drives client-side movement, thermal scans on arrival, overlays.
 - **Logs** (`logs/`): MCP/Orchestrator logs; UI mission log shown in the HUD.
 
@@ -53,10 +53,10 @@ Starts API on :8000 and serves the UI on :8001 (http://localhost:8001/simulation
 
 ### Orchestrator & Swarm (current behavior)
 
-- Orchestrator polls MCP world state every ~1s (`ORCHESTRATOR_INTERVAL`); calls LLM only on crucial changes. Falls back to heuristic if no `GROQ_API_KEY`.
+- Orchestrator polls MCP world state every ~1s (`ORCHESTRATOR_INTERVAL`); calls LLM only on crucial changes. Falls back to heuristic if no `ANTHROPIC_API_KEY`.
 - Plans are pushed via `set_plan`; swarm pulls `latest_plan` for assignments.
 - Logs: `logs/` for orchestrator + MCP; `Logs/` for swarm.
-- LLM: Groq chat completions when `GROQ_API_KEY` is set (model `llama-3.1-8b-instant` by default, override via `GROQ_MODEL`). Without the key, orchestrator runs heuristic-only.
+- LLM: ILMU chat completions when `ANTHROPIC_API_KEY` is set (model `ilmu-glm-5.1` by default). Without the key, orchestrator runs heuristic-only.
 
 ### API quick reference
 
