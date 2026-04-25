@@ -20,32 +20,7 @@ pip install -r requirements.txt
 Env you’ll want set before running:
 
 ```bash
-export GROQ_API_KEY=sk-...   # for LLM planner; without it the orchestrator runs heuristic-only
-export GROQ_MODEL=llama-3.1-8b-instant  # optional override
-export ORCHESTRATOR_INTERVAL=1.0       # seconds between world polls (optional)
-```
-
-### Run services
-
-API (HTTP + WS):
-
-```bash
-python -m simulation.api.server
-
-```
-
-MCP server:
-
-```bash
-python -m mcp_system.mcp_server
-```
-
-UI only (offline/demo mode):
-
-```bash
-cd simulation/ui
-python -m http.server 8001
-# open http://localhost:8001/simulation.html
+export ANTHROPIC_API_KEY=apikey
 ```
 
 ### One-command local run
@@ -57,6 +32,7 @@ python -m http.server 8001
 Starts API on :8000 and serves the UI on :8001 (http://localhost:8001/simulation.html).
 
 ### Main Drone Loop (UI-driven movement)
+
 1) MCP assigns a target; UI moves the drone toward `targetPos` at `MOVE_SPEED`.
 2) On arrival, UI calls `thermal_scan`; server marks `thermal_scanned`, applies scan battery cost, and logs arrival.
 3) While scanning, assignments/redirects are ignored; status stays `scanning`.
@@ -64,16 +40,19 @@ Starts API on :8000 and serves the UI on :8001 (http://localhost:8001/simulation
 5) Telemetry (`report_telemetry`) keeps server state/battery in sync every `TELEMETRY_INTERVAL`.
 
 ### Swarm assignment behavior
+
 - Hazard-weighted scoring (fire > smoke > unknown) with sector bonuses; battery feasibility (round-trip + scan + safety margin).
 - One drone per target; duplicate suppression and cooldowns for hazard redirects; target locks to reduce oscillation.
 - Immediate scan when a drone stands on a hazard; patrol spread when no hazards exist.
 
 ### Coverage vs Discovery
+
 - **Coverage** = sectors with `thermal_scanned == true` (thermal scan completed). HUD coverage and `H` overlay use this.
 - **Discovery** = sectors first seen (passive or scan) even if not thermal scanned.
 - UI tinting: thermal-scanned sectors are high-contrast lime/amber; discovered-only sectors are muted; base tiles stay dark.
 
 ### Orchestrator & Swarm (current behavior)
+
 - Orchestrator polls MCP world state every ~1s (`ORCHESTRATOR_INTERVAL`); calls LLM only on crucial changes. Falls back to heuristic if no `GROQ_API_KEY`.
 - Plans are pushed via `set_plan`; swarm pulls `latest_plan` for assignments.
 - Logs: `logs/` for orchestrator + MCP; `Logs/` for swarm.
