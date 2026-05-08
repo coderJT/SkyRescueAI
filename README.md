@@ -2,6 +2,42 @@
 
 Autonomous multi‑drone search‑and‑rescue simulator with a shared Python core, MCP tools, and a browser-based 3D UI.
 
+### Screenshots
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/screenshots/DroneSimulator3.png" alt="Close-range drone mission view with tactical map and drone reasoning panel">
+      <br>
+      <sub><strong>Drone-focused mission view.</strong> Tracks fleet status, active thermal scans, tactical map hazards, and per-drone MCP/LLM decisions in one operator console.</sub>
+    </td>
+    <td width="50%">
+      <img src="docs/screenshots/DroneSimulator2.png" alt="Night mission deployment with multiple drones assigned across the disaster zone">
+      <br>
+      <sub><strong>Coordinated swarm deployment.</strong> Five drones spread across sectors while the command agent balances scan coverage, battery reserve, and return-to-base feasibility.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="docs/screenshots/DroneSimulator4.png" alt="Tactical map and drone thoughts panel showing hazard redirects and rescue priorities">
+      <br>
+      <sub><strong>Hazard-aware routing.</strong> The system redirects drones around fire and smoke zones while the reasoning panel explains current search priorities.</sub>
+    </td>
+    <td width="50%">
+      <img src="docs/screenshots/DroneSimulator1.png" alt="Overview mode showing scan bubbles, disaster grid, and active drone statuses">
+      <br>
+      <sub><strong>Search coverage overview.</strong> Scan bubbles show live sensor ranges across the 3D disaster grid, paired with a 2D tactical map for quick operator awareness.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <img src="docs/screenshots/DroneSimulator5.png" alt="Daylight rescue simulation showing expanded search coverage and active fire-sector scanning">
+      <br>
+      <sub><strong>Daylight mission progress.</strong> The swarm expands into unscanned fire sectors, updates coverage metrics, and keeps the operator informed through live mission logs.</sub>
+    </td>
+  </tr>
+</table>
+
 ### System Overview
 
 - **Simulation Engine** (`simulation/systems/simulation_engine.py`): Source of truth for sectors, hazards, survivors, drones; enforces battery drain, scan/thermal state, and mission metrics.
